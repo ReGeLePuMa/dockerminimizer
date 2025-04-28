@@ -1,25 +1,24 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
+	"flag"
+
+	"github.com/regelepuma/dockerminimizer/preprocess"
+	"github.com/regelepuma/dockerminimizer/types"
 )
 
 func main() {
-	apiClient, err := client.NewClientWithOpts(client.FromEnv)
-	if err != nil {
-		panic(err)
-	}
-	defer apiClient.Close()
+	dockerfile := flag.String("file", "./Dockerfile", "Path to the Dockerfile")
+	image := flag.String("image", "", "Name of the Docker image")
+	retries := flag.Int("max_limit", 10, "Maximum number of retries")
 
-	containers, err := apiClient.ContainerList(context.Background(), container.ListOptions{All: true})
-	if err != nil {
-		panic(err)
-	}
+	flag.Parse()
 
-	for _, ctr := range containers {
-		fmt.Printf("%s %s (status: %s)\n", ctr.ID, ctr.Image, ctr.Status)
+	args := types.Args{
+		Dockerfile: *dockerfile,
+		Image:      *image,
+		Retries:    *retries,
 	}
+	preprocess.ProcessArgs(args)
+
 }
