@@ -63,7 +63,7 @@ func buildAndExtractFilesystem(dockerfile string, envPath string) string {
 	return "dockerminimize-" + filepath.Base(envPath)
 }
 
-func extractMetadata(imageName string, dockerfile string, envPath string) {
+func extractMetadata(imageName string, dockerfile string, envPath string) types.DockerConfig {
 	fd, _ := os.Open(dockerfile)
 	defer fd.Close()
 	scanner := bufio.NewScanner(fd)
@@ -121,9 +121,10 @@ func extractMetadata(imageName string, dockerfile string, envPath string) {
 	}
 	writer.WriteString("CMD [" + strings.Join(command, ", ") + "]\n")
 	writer.Flush()
+	return config
 }
 
-func processDockerfile(dockerfile string, envPath string) (string, string) {
+func processDockerfile(dockerfile string, envPath string) (string, string, types.DockerConfig) {
 	content, _ := os.ReadFile(dockerfile)
 	_, err := parser.Parse(strings.NewReader(string(content)))
 	if err != nil {
@@ -131,11 +132,11 @@ func processDockerfile(dockerfile string, envPath string) (string, string) {
 		panic("Failed to parse Dockerfile: " + err.Error())
 	}
 	imageName := buildAndExtractFilesystem(dockerfile, envPath)
-	extractMetadata(imageName, dockerfile, envPath)
-	return imageName, envPath
+	metadata := extractMetadata(imageName, dockerfile, envPath)
+	return imageName, envPath, metadata
 }
 
-func processImage(imageName string, envPath string) (string, string) {
+func processImage(imageName string, envPath string) (string, string, types.DockerConfig) {
 	dockerfile, _ := os.Create("Dockerfile")
 	defer dockerfile.Close()
 	defer os.Remove("Dockerfile")
@@ -145,7 +146,7 @@ func processImage(imageName string, envPath string) (string, string) {
 	return processDockerfile("Dockerfile", envPath)
 }
 
-func ProcessArgs(args types.Args) (string, string) {
+func ProcessArgs(args types.Args) (string, string, types.DockerConfig) {
 	envPath := createEnvironment()
 	if args.Image == "" {
 		_, err := os.Stat(args.Dockerfile)
