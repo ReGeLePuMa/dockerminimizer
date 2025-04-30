@@ -14,27 +14,30 @@ import (
 	"time"
 
 	"github.com/moby/buildkit/frontend/dockerfile/parser"
+	"github.com/regelepuma/dockerminimizer/logger"
 	"github.com/regelepuma/dockerminimizer/types"
 )
+
+var log = logger.Log
 
 func createEnvironment() string {
 	dir := md5.Sum(fmt.Appendf(nil, "%d", time.Now().UnixNano()))
 	dirStr := hex.EncodeToString(dir[:])
 	homeDir, _ := os.UserHomeDir()
-	err := os.MkdirAll(homeDir+"/dockerminimizer/"+dirStr, 0777)
+	err := os.MkdirAll(homeDir+"/.dockerminimizer/"+dirStr, 0777)
 	if err != nil {
 		panic("Failed to create directory: " + err.Error())
 	}
-	fmt.Println("Created directory:", homeDir+"/dockerminimizer/"+dirStr)
-	return (homeDir + "/dockerminimizer/" + dirStr)
+	log.Info("Created directory:", homeDir+"/.dockerminimizer/"+dirStr)
+	return (homeDir + "/.dockerminimizer/" + dirStr)
 }
 
 func buildAndExtractFilesystem(dockerfile string, envPath string) string {
 	buildContext := filepath.Dir(dockerfile)
 	cmd := exec.Command("docker", "build", "-f", dockerfile, "-t", "dockerminimize-"+filepath.Base(envPath), buildContext)
-	fmt.Println(cmd.String())
+	log.Info(cmd.String())
 	output, err := cmd.CombinedOutput()
-	fmt.Println(string(output))
+	log.Info(string(output))
 	if err != nil {
 		os.RemoveAll(envPath)
 		panic("Failed to build Docker image: " + err.Error())
@@ -46,12 +49,16 @@ func buildAndExtractFilesystem(dockerfile string, envPath string) string {
 		hasSudo = "sudo"
 	}
 	cmd = exec.Command(hasSudo, "docker", "build", "-f", dockerfile, "-o", envPath+"/rootfs", buildContext)
-	fmt.Println(cmd.String())
+	log.Info(cmd.String())
 	output, err = cmd.CombinedOutput()
-	fmt.Println(string(output))
+	log.Info(string(output))
 	if err != nil {
 		os.RemoveAll(envPath)
 		panic("Failed to extract filesystem from Docker image: " + err.Error())
+	}
+	if os.Getuid() != 0 {
+		exec.Command("sudo", "chown", "-R", os.Getenv("USER")+":"+os.Getenv("USER"), envPath).Run()
+		exec.Command("sudo", "chmod", "-R", "755", envPath).Run()
 	}
 	return "dockerminimize-" + filepath.Base(envPath)
 }
@@ -72,7 +79,7 @@ func extractMetadata(imageName string, dockerfile string, envPath string) {
 		}
 	}
 	cmd := exec.Command("docker", "inspect", "--format", "{{json .Config}}", imageName)
-	fmt.Println(cmd.String())
+	log.Info(cmd.String())
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
@@ -108,10 +115,10 @@ func extractMetadata(imageName string, dockerfile string, envPath string) {
 		}
 	}
 	for _, entrypoint := range config.Entrypoint {
-		writer.WriteString("ENTRYPOINT [" + entrypoint + "]\n")
+		writer.WriteString("ENTRYPOINT [\"" + entrypoint + "\"]\n")
 	}
 	for _, cmd := range config.Cmd {
-		writer.WriteString("CMD [" + cmd + "]\n")
+		writer.WriteString("CMD [\"" + cmd + "\"]\n")
 	}
 	writer.Flush()
 }
