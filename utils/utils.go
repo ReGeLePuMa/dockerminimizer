@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/regelepuma/dockerminimizer/logger"
+	"github.com/regelepuma/dockerminimizer/types"
 )
 
 var log = logger.Log
@@ -47,7 +48,36 @@ func AppendIfMissing[T comparable](slice []T, item T) []T {
 	return append(slice, item)
 }
 
-func CreateDockerfile(dockerfile string, envPath string, files map[string][]string, symLinks map[string]string) {
+func GetContainerCommand(envPath string, metadata types.DockerConfig) string {
+	command := ""
+	if metadata.Entrypoint != nil {
+		command = filepath.Base(metadata.Entrypoint[0])
+	} else if metadata.Cmd != nil {
+		command = filepath.Base(metadata.Cmd[0])
+	}
+	if command == "" {
+		log.Error("Failed to find command in Docker image\n")
+		Cleanup(envPath)
+		os.Exit(1)
+	}
+	var hasSudo string
+	if os.Getuid() == 0 {
+		hasSudo = ""
+	} else {
+		hasSudo = "sudo"
+	}
+
+	output, err := exec.Command(hasSudo, "chroot", envPath+"/rootfs", "which", command).CombinedOutput()
+	log.Info(string(output))
+	if err != nil {
+		log.Error("Failed to find command in Docker image\n")
+		Cleanup(envPath)
+		os.Exit(1)
+	}
+	return strings.TrimSpace(string(output))
+}
+
+func CreateDockerfile(dockerfile string, envPath string, command string, files map[string][]string, symLinks map[string]string) {
 	file, _ := os.Create(envPath + "/" + dockerfile)
 	defer file.Close()
 	srcFile, _ := os.Open(envPath + "/Dockerfile.minimal.template")
@@ -59,9 +89,12 @@ func CreateDockerfile(dockerfile string, envPath string, files map[string][]stri
 	}
 	writer.Flush()
 	writer.WriteString("\n")
+	if command != "" {
+		writer.WriteString("COPY --from=builder " + command + " " + command + "\n")
+	}
 	for dir, libs := range files {
 		log.Println("Copying files from " + dir)
-		writer.WriteString("COPY --from=builder " + strings.Join(libs, " ") + " " + dir + "\n")
+		writer.WriteString("COPY --from=builder " + strings.Join(libs, " ") + " " + dir + "/\n")
 	}
 	for link, target := range symLinks {
 		log.Println("Copying symbolic link " + link + " to " + target)
@@ -76,18 +109,20 @@ func ValidateDockerfile(dockerfile string, envPath string, context string) error
 	tagName := parts[len(parts)-1]
 	imageName := "dockerminimize-" + filepath.Base(envPath) + ":" + tagName
 	buildPath := envPath + "/" + dockerfile
-	_, err := exec.Command("docker", "build", "-f", buildPath, "-t", imageName, context).CombinedOutput()
-	log.Info()
+	output, err := exec.Command("docker", "build", "-f", buildPath, "-t", imageName, context).CombinedOutput()
+	log.Info(string(output))
 	if err != nil {
 		log.Error("Failed to build Docker image\n")
 		return errors.New("failed to build Docker image")
 	}
-	_, err = exec.Command("docker", "run", "--rm", imageName).CombinedOutput()
+	output, err = exec.Command("docker", "run", "--rm", imageName).CombinedOutput()
+	log.Info(string(output))
 	if err != nil {
 		log.Error("Failed to run Docker image\n")
 		return errors.New("failed to run Docker image")
 	}
-	exec.Command("docker", "rmi", imageName).CombinedOutput()
+	log.Info("Removing Docker image\n")
+	exec.Command("docker", "rmi", "-f", imageName).CombinedOutput()
 	return nil
 }
 
