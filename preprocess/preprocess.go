@@ -109,17 +109,17 @@ func extractMetadata(imageName string, dockerfile string, envPath string) {
 	if config.User != "" {
 		writer.WriteString("USER " + config.User + "\n")
 	}
-	for _, exposedPorts := range config.ExposedPorts {
-		for port := range exposedPorts {
-			writer.WriteString("EXPOSE " + port + "\n")
-		}
+	for exposedPorts := range config.ExposedPorts {
+		writer.WriteString("EXPOSE " + exposedPorts + "\n")
 	}
 	for _, entrypoint := range config.Entrypoint {
 		writer.WriteString("ENTRYPOINT [\"" + entrypoint + "\"]\n")
 	}
+	command := []string{}
 	for _, cmd := range config.Cmd {
-		writer.WriteString("CMD [\"" + cmd + "\"]\n")
+		command = append(command, fmt.Sprintf("\"%s\"", cmd))
 	}
+	writer.WriteString("CMD [" + strings.Join(command, ", ") + "]\n")
 	writer.Flush()
 }
 
