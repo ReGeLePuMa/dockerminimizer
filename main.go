@@ -31,7 +31,7 @@ func main() {
 		Retries:    *retries,
 	}
 	_, envPath, metadata := preprocess.ProcessArgs(args)
-	err := ldd.StaticAnalysis(envPath, metadata, filepath.Dir(*dockerfile))
+	_, _, err := ldd.StaticAnalysis(envPath, metadata, filepath.Dir(*dockerfile))
 	if err == nil {
 		log.Info("Static analysis succeeded")
 		log.Info("Cleaning up...")
@@ -39,5 +39,7 @@ func main() {
 	} else {
 		log.Error("Static analysis failed, continuing with dynamic analysis")
 	}
+	log.Info("Cleaning up...")
+	utils.Cleanup(envPath)
 
 }

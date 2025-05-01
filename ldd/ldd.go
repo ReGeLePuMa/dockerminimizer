@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -50,23 +49,18 @@ func parseOutput(output []byte, envPath string) (map[string][]string, map[string
 	}
 	return files, symLinks
 }
-func StaticAnalysis(envPath string, metadata types.DockerConfig, context string) error {
+func StaticAnalysis(envPath string, metadata types.DockerConfig, context string) (map[string][]string, map[string]string, error) {
 	command := utils.GetContainerCommand(envPath, metadata)
-	var hasSudo string
-	if os.Getuid() == 0 {
-		hasSudo = ""
-	} else {
-		hasSudo = "sudo"
-	}
+	hasSudo := utils.HasSudo()
 	lddCommand := hasSudo + " chroot " + envPath + "/rootfs ldd " + command
 	log.Info("Running command:", lddCommand)
 	lddOutput, err := exec.Command("sh", "-c", lddCommand).CombinedOutput()
 	if err != nil {
 		log.Error("Failed to run ldd command\n" + err.Error())
-		return errors.New("failed to run ldd command")
+		return nil, nil, errors.New("failed to run ldd command")
 	}
 	libs, symlinkLibs := parseOutput(lddOutput, envPath)
 	utils.CreateDockerfile("Dockerfile.minimal.ldd", envPath, command, libs, symlinkLibs)
-	log.Info("Validating Dockerfile")
-	return utils.ValidateDockerfile("Dockerfile.minimal.ldd", envPath, context)
+	log.Info("Validating Dockerfile...")
+	return libs, symlinkLibs, utils.ValidateDockerfile("Dockerfile.minimal.ldd", envPath, context)
 }

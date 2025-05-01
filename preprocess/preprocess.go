@@ -16,6 +16,7 @@ import (
 	"github.com/moby/buildkit/frontend/dockerfile/parser"
 	"github.com/regelepuma/dockerminimizer/logger"
 	"github.com/regelepuma/dockerminimizer/types"
+	"github.com/regelepuma/dockerminimizer/utils"
 )
 
 var log = logger.Log
@@ -42,12 +43,7 @@ func buildAndExtractFilesystem(dockerfile string, envPath string) string {
 		os.RemoveAll(envPath)
 		panic("Failed to build Docker image: " + err.Error())
 	}
-	var hasSudo string
-	if os.Getuid() == 0 {
-		hasSudo = ""
-	} else {
-		hasSudo = "sudo"
-	}
+	hasSudo := utils.HasSudo()
 	cmd = exec.Command(hasSudo, "docker", "build", "-f", dockerfile, "-o", envPath+"/rootfs", buildContext)
 	log.Info(cmd.String())
 	output, err = cmd.CombinedOutput()
@@ -112,9 +108,11 @@ func extractMetadata(imageName string, dockerfile string, envPath string) types.
 	for exposedPorts := range config.ExposedPorts {
 		writer.WriteString("EXPOSE " + exposedPorts + "\n")
 	}
+	entrypoints := []string{}
 	for _, entrypoint := range config.Entrypoint {
-		writer.WriteString("ENTRYPOINT [\"" + entrypoint + "\"]\n")
+		entrypoints = append(entrypoints, fmt.Sprintf("\"%s\"", entrypoint))
 	}
+	writer.WriteString("ENTRYPOINT [" + strings.Join(entrypoints, ", ") + "]\n")
 	command := []string{}
 	for _, cmd := range config.Cmd {
 		command = append(command, fmt.Sprintf("\"%s\"", cmd))

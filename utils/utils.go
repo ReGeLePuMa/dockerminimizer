@@ -48,6 +48,13 @@ func AppendIfMissing[T comparable](slice []T, item T) []T {
 	return append(slice, item)
 }
 
+func HasSudo() string {
+	if os.Getuid() == 0 {
+		return ""
+	}
+	return "sudo"
+}
+
 func GetContainerCommand(envPath string, metadata types.DockerConfig) string {
 	command := ""
 	if metadata.Entrypoint != nil {
@@ -60,12 +67,7 @@ func GetContainerCommand(envPath string, metadata types.DockerConfig) string {
 		Cleanup(envPath)
 		os.Exit(1)
 	}
-	var hasSudo string
-	if os.Getuid() == 0 {
-		hasSudo = ""
-	} else {
-		hasSudo = "sudo"
-	}
+	hasSudo := HasSudo()
 
 	output, err := exec.Command(hasSudo, "chroot", envPath+"/rootfs", "which", command).CombinedOutput()
 	log.Info(string(output))
@@ -122,11 +124,11 @@ func ValidateDockerfile(dockerfile string, envPath string, context string) error
 		return errors.New("failed to run Docker image")
 	}
 	log.Info("Removing Docker image\n")
-	exec.Command("docker", "rmi", "-f", imageName).CombinedOutput()
 	return nil
 }
 
 func Cleanup(envPath string) {
+	exec.Command("docker", "image", "prune", "-af").CombinedOutput()
 	os.Clearenv()
 	err := os.RemoveAll(envPath)
 	if err != nil {
