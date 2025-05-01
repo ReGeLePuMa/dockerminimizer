@@ -17,8 +17,9 @@ func main() {
 
 	dockerfile := flag.String("file", "./Dockerfile", "Path to the Dockerfile")
 	image := flag.String("image", "", "Name of the Docker image")
-	retries := flag.Int("max_limit", 10, "Maximum number of retries")
+	flag.Int("max_limit", 10, "Maximum number of retries")
 	debug := flag.Bool("debug", false, "Enable debug mode")
+	timeout := flag.Int("timeout", 30, "How long should `strace` trace the command")
 	flag.Parse()
 	if *debug {
 		os.Setenv("debug", "true")
@@ -29,7 +30,6 @@ func main() {
 	args := types.Args{
 		Dockerfile: *dockerfile,
 		Image:      *image,
-		Retries:    *retries,
 	}
 	imageName, envPath, metadata := preprocess.ProcessArgs(args)
 	files, symLinks, err := ldd.StaticAnalysis(envPath, metadata, filepath.Dir(*dockerfile))
@@ -40,7 +40,7 @@ func main() {
 		return
 	}
 	log.Error("Static analysis failed, continuing with dynamic analysis")
-	strace.DynamicAnalysis(imageName, envPath, files, symLinks)
+	strace.DynamicAnalysis(imageName, envPath, files, symLinks, *timeout)
 	log.Info("Cleaning up...")
 	utils.Cleanup(envPath)
 

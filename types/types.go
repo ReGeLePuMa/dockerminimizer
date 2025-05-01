@@ -3,7 +3,6 @@ package types
 type Args struct {
 	Dockerfile string
 	Image      string
-	Retries    int
 }
 
 type DockerConfig struct {

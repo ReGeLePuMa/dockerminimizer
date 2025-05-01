@@ -60,6 +60,27 @@ func HasSudo() string {
 	return "sudo"
 }
 
+func copyFile(src string, dest string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+	_, err = io.Copy(destFile, sourceFile)
+	if err != nil {
+		return err
+	}
+
+	err = destFile.Sync()
+	return err
+}
+
 func GetContainerCommand(envPath string, metadata types.DockerConfig) string {
 	command := ""
 	if metadata.Entrypoint != nil {
@@ -128,7 +149,7 @@ func ValidateDockerfile(dockerfile string, envPath string, context string) error
 		log.Error("Failed to run Docker image\n")
 		return errors.New("failed to run Docker image")
 	}
-	log.Info("Removing Docker image\n")
+	copyFile(envPath+"/"+dockerfile, "Dockerfile.minimal")
 	return nil
 }
 

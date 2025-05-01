@@ -1,11 +1,11 @@
 package strace
 
 import (
-	"bufio"
-	"bytes"
-	"io"
+	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/regelepuma/dockerminimizer/logger"
@@ -18,61 +18,68 @@ func getPID(containerName string) string {
 	for {
 		pid, err := exec.Command("docker", "inspect", "-f", "{{.State.Pid}}", containerName).Output()
 		if err == nil {
-			return strings.Trim(string(pid), "\n ")
+			return strings.TrimSpace(string(pid))
 		}
 	}
 }
 
-func DynamicAnalysis(imageName string, envPath string, files map[string][]string, symLinks map[string]string) {
+func runContainer(imageName string, containerName string) {
+	exec.Command("docker", "run", "--rm", "--name", containerName, imageName).Run()
+}
+
+func getStraceOutput(containerName string, timeout int) string {
 	syscalls := []string{
 		"open",
 		"openat",
 		"execve",
 		"execveat",
 	}
-	containerName := imageName + "-strace"
-	log.Info("Creating container:", containerName)
 	hasSudo := utils.HasSudo()
-	exec.Command("docker", "run", "-d", "--rm", "--name", containerName, imageName).Run()
 	pid := getPID(containerName)
 	log.Info("Container PID:", pid)
-	cmd := exec.Command(hasSudo, "strace", "-p", pid, "-fe", strings.Join(syscalls, ","))
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-	cmd.Start()
-	stream := io.MultiReader(stdout, stderr)
-	scanner := bufio.NewScanner(stream)
-	inactivityTimer := time.NewTimer(30 * time.Second)
-	defer inactivityTimer.Stop()
-	var buf bytes.Buffer
-	go func() {
-		for scanner.Scan() {
-			line := scanner.Text()
-			buf.WriteString(line + "\n")
-			inactivityTimer.Reset(30 * time.Second)
-		}
-	}()
 
+	inactivityTimer := time.NewTimer(time.Duration(timeout) * time.Second)
+
+	cmd := exec.Command(hasSudo, "strace", "-p", pid, "-fe", strings.Join(syscalls, ","))
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	go func() {
 		<-inactivityTimer.C
-		log.Println("30 seconds of inactivity detected. Killing strace.")
+		log.Info(fmt.Sprintf("%d seconds of inactivity have passed. Killing strace.", timeout))
 		if cmd.Process != nil {
-			cmd := exec.Command("sh", "-c", "pgrep -f 'sudo strace -p "+pid+"'")
-			log.Print(cmd.String())
-			out, _ := cmd.Output()
-			log.Print(string(out))
-			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-			for _, line := range lines {
-				log.Println("Killing PID: " + line)
-				exec.Command(hasSudo, "kill", "-9", line).Run()
-			}
-			log.Println("Killing container:", containerName)
+			exec.Command(hasSudo, "kill", "-15", fmt.Sprintf("-%d", cmd.Process.Pid)).Run()
 			exec.Command(hasSudo, "docker", "kill", containerName).Run()
 		}
 	}()
+	output, _ := cmd.CombinedOutput()
 
 	cmd.Wait()
-	command := buf.String()
+	return string(output)
+
+}
+
+func DynamicAnalysis(imageName string, envPath string, files map[string][]string, symLinks map[string]string, timeout int) {
+
+	containerName := imageName + "-strace"
+	log.Info("Creating container:", containerName)
+	var command string
+	var wg sync.WaitGroup
+	started := make(chan struct{})
+
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		close(started)
+		command = getStraceOutput(containerName, timeout)
+	}()
+
+	go func() {
+		defer wg.Done()
+		<-started
+		runContainer(imageName, containerName)
+	}()
+
+	wg.Wait()
 	log.Info("Strace output:\n", command)
 
 }
