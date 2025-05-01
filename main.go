@@ -8,6 +8,7 @@ import (
 	"github.com/regelepuma/dockerminimizer/ldd"
 	"github.com/regelepuma/dockerminimizer/logger"
 	"github.com/regelepuma/dockerminimizer/preprocess"
+	"github.com/regelepuma/dockerminimizer/strace"
 	"github.com/regelepuma/dockerminimizer/types"
 	"github.com/regelepuma/dockerminimizer/utils"
 )
@@ -30,15 +31,16 @@ func main() {
 		Image:      *image,
 		Retries:    *retries,
 	}
-	_, envPath, metadata := preprocess.ProcessArgs(args)
-	_, _, err := ldd.StaticAnalysis(envPath, metadata, filepath.Dir(*dockerfile))
+	imageName, envPath, metadata := preprocess.ProcessArgs(args)
+	files, symLinks, err := ldd.StaticAnalysis(envPath, metadata, filepath.Dir(*dockerfile))
 	if err == nil {
 		log.Info("Static analysis succeeded")
 		log.Info("Cleaning up...")
 		utils.Cleanup(envPath)
-	} else {
-		log.Error("Static analysis failed, continuing with dynamic analysis")
+		return
 	}
+	log.Error("Static analysis failed, continuing with dynamic analysis")
+	strace.DynamicAnalysis(imageName, envPath, files, symLinks)
 	log.Info("Cleaning up...")
 	utils.Cleanup(envPath)
 

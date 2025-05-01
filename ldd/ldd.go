@@ -28,6 +28,7 @@ func parseOutput(output []byte, envPath string) (map[string][]string, map[string
 			if strings.Contains(lib, "not found") {
 				continue
 			}
+			lib = utils.RealPath(lib)
 			if utils.CheckIfSymbolicLink(lib, envPath) {
 				symLinks[lib] = utils.ReadSymbolicLink(lib, envPath)
 
@@ -39,7 +40,7 @@ func parseOutput(output []byte, envPath string) (map[string][]string, map[string
 			continue
 		} else {
 			lib := strings.Split(strings.TrimSpace(line), " ")[0]
-
+			lib = utils.RealPath(lib)
 			if utils.CheckIfSymbolicLink(lib, envPath) {
 				symLinks[lib] = utils.ReadSymbolicLink(lib, envPath)
 			} else if utils.CheckIfFileExists(lib, envPath) {

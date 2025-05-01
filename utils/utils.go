@@ -16,6 +16,11 @@ import (
 
 var log = logger.Log
 
+func RealPath(path string) string {
+	realPath, _ := filepath.Abs(path)
+	return filepath.Clean(realPath)
+}
+
 func CheckIfFileExists(file string, envPath string) bool {
 	_, err := os.Stat(envPath + "/rootfs/" + file)
 	return !os.IsNotExist(err)
