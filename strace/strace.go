@@ -1,14 +1,17 @@
 package strace
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
 	"github.com/regelepuma/dockerminimizer/logger"
+	"github.com/regelepuma/dockerminimizer/types"
 	"github.com/regelepuma/dockerminimizer/utils"
 )
 
@@ -23,63 +26,58 @@ func getPID(containerName string) string {
 	}
 }
 
-func runContainer(imageName string, containerName string) {
-	exec.Command("docker", "run", "--rm", "--name", containerName, imageName).Run()
-}
-
-func getStraceOutput(containerName string, timeout int) string {
+func getStraceOutput(imageName string, containerName string, metadata types.DockerConfig, timeout int) string {
 	syscalls := []string{
 		"open",
 		"openat",
 		"execve",
 		"execveat",
 	}
+	command := utils.GetFullContainerCommand(metadata)
 	hasSudo := utils.HasSudo()
-	pid := getPID(containerName)
-	log.Info("Container PID:", pid)
-
-	inactivityTimer := time.NewTimer(time.Duration(timeout) * time.Second)
-
-	cmd := exec.Command(hasSudo, "strace", "-p", pid, "-fe", strings.Join(syscalls, ","))
+	command = fmt.Sprintf(
+		"docker run --rm --name %s -v /usr/local/bin/strace:/usr/bin/strace %s /usr/bin/strace -fe %s %s",
+		containerName,
+		imageName,
+		strings.Join(syscalls, ","),
+		command,
+	)
+	cmd := exec.Command("sh", "-c", command)
+	log.Info("Running command:", command)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	go func() {
-		<-inactivityTimer.C
-		log.Info(fmt.Sprintf("%d seconds of inactivity have passed. Killing strace.", timeout))
+	var out bytes.Buffer
+	cmd.Stderr = &out
+	timer := time.AfterFunc(time.Duration(timeout)*time.Second, func() {
 		if cmd.Process != nil {
+			log.Info(fmt.Sprintf("%d seconds have passed. Killing strace.", timeout))
+			exec.Command("docker", "stop", "-t", "5", containerName).Run()
 			exec.Command(hasSudo, "kill", "-15", fmt.Sprintf("-%d", cmd.Process.Pid)).Run()
-			exec.Command(hasSudo, "docker", "kill", containerName).Run()
 		}
-	}()
-	output, _ := cmd.CombinedOutput()
+	})
+	defer timer.Stop()
+	err := cmd.Start()
 
+	if err != nil {
+		log.Error("Failed to run strace command\n" + err.Error())
+		return ""
+	}
 	cmd.Wait()
-	return string(output)
-
+	return out.String()
 }
 
-func DynamicAnalysis(imageName string, envPath string, files map[string][]string, symLinks map[string]string, timeout int) {
+func DynamicAnalysis(imageName string, envPath string, metadata types.DockerConfig, files map[string][]string, symLinks map[string]string, timeout int) error {
+	_, err := os.Stat("/usr/local/bin/strace")
+	if os.IsNotExist(err) {
+		log.Error("Non statically linked strace not found in /usr/local/bin/strace")
+		log.Error("Please compile strace statically and copy it to /usr/local/bin/strace")
+		log.Error("Skipping dynamic analysis")
+		return errors.New("strace not found")
+	}
 
 	containerName := imageName + "-strace"
 	log.Info("Creating container:", containerName)
-	var command string
-	var wg sync.WaitGroup
-	started := make(chan struct{})
+	command := getStraceOutput(imageName, containerName, metadata, timeout)
 
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		close(started)
-		command = getStraceOutput(containerName, timeout)
-	}()
-
-	go func() {
-		defer wg.Done()
-		<-started
-		runContainer(imageName, containerName)
-	}()
-
-	wg.Wait()
 	log.Info("Strace output:\n", command)
-
+	return nil
 }

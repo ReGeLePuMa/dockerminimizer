@@ -32,7 +32,7 @@ func main() {
 		Image:      *image,
 	}
 	imageName, envPath, metadata := preprocess.ProcessArgs(args)
-	files, symLinks, err := ldd.StaticAnalysis(envPath, metadata, filepath.Dir(*dockerfile))
+	files, symLinks, err := ldd.StaticAnalysis(envPath, metadata, filepath.Dir(*dockerfile), *timeout)
 	if err == nil {
 		log.Info("Static analysis succeeded")
 		log.Info("Cleaning up...")
@@ -40,7 +40,7 @@ func main() {
 		return
 	}
 	log.Error("Static analysis failed, continuing with dynamic analysis")
-	strace.DynamicAnalysis(imageName, envPath, files, symLinks, *timeout)
+	strace.DynamicAnalysis(imageName, envPath, metadata, files, symLinks, *timeout)
 	log.Info("Cleaning up...")
 	utils.Cleanup(envPath)
 

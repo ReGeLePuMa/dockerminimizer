@@ -3,12 +3,15 @@ package utils
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/regelepuma/dockerminimizer/logger"
 	"github.com/regelepuma/dockerminimizer/types"
@@ -81,6 +84,16 @@ func copyFile(src string, dest string) error {
 	return err
 }
 
+func GetFullContainerCommand(metadata types.DockerConfig) string {
+	command := ""
+	if metadata.Entrypoint != nil {
+		command += strings.Join(metadata.Entrypoint, " ")
+	} else if metadata.Cmd != nil {
+		command += strings.Join(metadata.Cmd, " ")
+	}
+	return command
+}
+
 func GetContainerCommand(envPath string, metadata types.DockerConfig) string {
 	command := ""
 	if metadata.Entrypoint != nil {
@@ -132,7 +145,7 @@ func CreateDockerfile(dockerfile string, envPath string, command string, files m
 	writer.Flush()
 }
 
-func ValidateDockerfile(dockerfile string, envPath string, context string) error {
+func ValidateDockerfile(dockerfile string, envPath string, context string, timeout int) error {
 	parts := strings.Split(dockerfile, ".")
 	tagName := parts[len(parts)-1]
 	imageName := "dockerminimize-" + filepath.Base(envPath) + ":" + tagName
@@ -143,9 +156,23 @@ func ValidateDockerfile(dockerfile string, envPath string, context string) error
 		log.Error("Failed to build Docker image\n")
 		return errors.New("failed to build Docker image")
 	}
-	output, err = exec.Command("docker", "run", "--rm", imageName).CombinedOutput()
+
+	ok := true
+	cmd := exec.Command("docker", "run", "--rm", imageName)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	timer := time.AfterFunc(time.Duration(timeout)*time.Second, func() {
+		if cmd.Process != nil {
+			log.Info(fmt.Sprintf("%d seconds have passed. Killing strace.", timeout))
+			exec.Command("docker", "stop", "-t", "5", imageName).Run()
+			exec.Command(HasSudo(), "kill", "-15", fmt.Sprintf("-%d", cmd.Process.Pid)).Run()
+			ok = false
+		}
+	})
+	defer timer.Stop()
+	output, err = cmd.CombinedOutput()
+
 	log.Info(string(output))
-	if err != nil {
+	if err != nil || !ok {
 		log.Error("Failed to run Docker image\n")
 		return errors.New("failed to run Docker image")
 	}
