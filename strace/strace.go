@@ -16,14 +16,14 @@ import (
 
 var log = logger.Log
 
-func getStraceOutput(imageName string, stracePath string, containerName string, metadata types.DockerConfig, timeout int) string {
+func getStraceOutput(imageName string, stracePath string, containerName string, envPath string, metadata types.DockerConfig, timeout int) string {
 	syscalls := []string{
 		"open",
 		"openat",
 		"execve",
 		"execveat",
 	}
-	command := utils.GetFullContainerCommand(metadata)
+	command := utils.GetFullContainerCommand(imageName, envPath, metadata)
 	hasSudo := utils.HasSudo()
 	command = fmt.Sprintf(
 		"docker run --rm --name %s -v %s:/usr/bin/strace %s /usr/bin/strace -fe %s %s",
@@ -73,7 +73,7 @@ func DynamicAnalysis(imageName string, envPath string, metadata types.DockerConf
 
 	containerName := imageName + "-strace"
 	log.Info("Creating container:", containerName)
-	command := getStraceOutput(imageName, stracePath, containerName, metadata, timeout)
+	command := getStraceOutput(imageName, stracePath, containerName, envPath, metadata, timeout)
 
 	log.Info("Strace output:\n", command)
 	return nil

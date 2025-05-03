@@ -46,7 +46,7 @@ func ReadSymbolicLink(file string, envPath string) string {
 	if !filepath.IsAbs(link) {
 		resolved = filepath.Join(filepath.Dir(envPath+"/"+file), link)
 	}
-	return strings.TrimPrefix(resolved, envPath+"/")
+	return strings.TrimPrefix(resolved, envPath)
 }
 
 func AppendIfMissing[T comparable](slice []T, item T) []T {
@@ -84,28 +84,40 @@ func copyFile(src string, dest string) error {
 	return err
 }
 
-func GetFullContainerCommand(metadata types.DockerConfig) string {
-	command := metadata.WorkingDir + "/"
-	if metadata.Entrypoint != nil {
-		command += strings.Join(metadata.Entrypoint, " ")
-	} else if metadata.Cmd != nil {
-		command += strings.Join(metadata.Cmd, " ")
+func GetFullContainerCommand(imageName string, envPath string, metadata types.DockerConfig) string {
+	command := GetContainerCommand(imageName, envPath, metadata) + " "
+	if len(metadata.Entrypoint) > 1 {
+		command += strings.Join(metadata.Entrypoint[1:], " ")
 	}
-	return filepath.Clean(command)
+	command += " "
+	if len(metadata.Cmd) > 0 {
+		var cmd []string
+		if len(metadata.Entrypoint) > 0 {
+			cmd = metadata.Cmd
+		} else {
+			cmd = metadata.Cmd[1:]
+		}
+		command += strings.Join(cmd, " ")
+	}
+	return strings.TrimSpace(command)
 }
 
 func GetContainerCommand(imageName string, envPath string, metadata types.DockerConfig) string {
 	command := ""
 	if len(metadata.Entrypoint) > 0 {
-		command = filepath.Base(metadata.Entrypoint[0])
+		command = metadata.Entrypoint[0]
 	} else if len(metadata.Cmd) > 0 {
-		command = filepath.Base(metadata.Cmd[0])
+		command = metadata.Cmd[0]
 	}
 	if command == "" {
 		log.Error("Failed to find command in Docker image\n")
 		Cleanup(envPath, imageName)
 		os.Exit(1)
 	}
+	if filepath.IsAbs(command) {
+		return command
+	}
+	command = filepath.Base(command)
 	hasSudo := HasSudo()
 
 	output, err := exec.Command(hasSudo, "chroot", envPath+"/rootfs", "which", command).CombinedOutput()
@@ -123,10 +135,10 @@ func GetContainerCommand(imageName string, envPath string, metadata types.Docker
 	return cmd
 }
 
-func CreateDockerfile(dockerfile string, envPath string, command string, files map[string][]string, symLinks map[string]string) {
+func CreateDockerfile(dockerfile string, template string, envPath string, files map[string][]string, symLinks map[string]string) {
 	file, _ := os.Create(envPath + "/" + dockerfile)
 	defer file.Close()
-	srcFile, _ := os.Open(envPath + "/Dockerfile.minimal.template")
+	srcFile, _ := os.Open(envPath + "/" + template)
 	defer srcFile.Close()
 	writer := bufio.NewWriter(file)
 	_, err := io.Copy(writer, srcFile)
@@ -135,9 +147,6 @@ func CreateDockerfile(dockerfile string, envPath string, command string, files m
 	}
 	writer.Flush()
 	writer.WriteString("\n")
-	if command != "" {
-		writer.WriteString("COPY --from=builder " + command + " " + command + "\n")
-	}
 	for dir, libs := range files {
 		log.Println("Copying files from " + dir)
 		writer.WriteString("COPY --from=builder " + strings.Join(libs, " ") + " " + dir + "/\n")

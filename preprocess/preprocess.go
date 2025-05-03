@@ -136,6 +136,50 @@ func extractMetadata(imageName string, dockerfile string, envPath string) types.
 	return config
 }
 
+func parseFile(file string, envPath string, metadata types.DockerConfig,
+	files map[string][]string, symLinks map[string]string) {
+	workDir := filepath.Clean(envPath + "/rootfs/" + metadata.WorkingDir)
+	if utils.CheckIfFileExists(file, workDir) {
+		filePath := filepath.Clean(metadata.WorkingDir + "/" + file)
+		if utils.CheckIfSymbolicLink(file, workDir) {
+			symLinks[filePath] = utils.ReadSymbolicLink(filePath, envPath+"/rootfs")
+		} else {
+			files[filepath.Dir(filePath)] = utils.AppendIfMissing(files[filepath.Dir(filePath)], filePath)
+		}
+	} else {
+		hasSudo := utils.HasSudo()
+		output, err := exec.Command(hasSudo, "chroot", envPath+"/rootfs", "which", file).CombinedOutput()
+		if err != nil {
+			return
+		}
+		cmd := strings.TrimSpace(string(output))
+		if cmd == "" {
+			return
+		}
+		cmd = filepath.Clean(cmd)
+		if !utils.CheckIfFileExists(cmd, envPath+"/rootfs") {
+			return
+		}
+		if utils.CheckIfSymbolicLink(cmd, envPath+"/rootfs") {
+			symLinks[cmd] = utils.ReadSymbolicLink(cmd, envPath+"/rootfs")
+		} else {
+			files[filepath.Dir(cmd)] = utils.AppendIfMissing(files[filepath.Dir(cmd)], cmd)
+		}
+	}
+}
+
+func parseCommand(metadata types.DockerConfig, envPath string) (map[string][]string, map[string]string) {
+	files := make(map[string][]string)
+	symLinks := make(map[string]string)
+	for _, entrypoint := range metadata.Entrypoint {
+		parseFile(entrypoint, envPath, metadata, files, symLinks)
+	}
+	for _, cmd := range metadata.Cmd {
+		parseFile(cmd, envPath, metadata, files, symLinks)
+	}
+	return files, symLinks
+}
+
 func processDockerfile(dockerfile string, envPath string, timeout int) (string, string, types.DockerConfig, error) {
 	content, _ := os.ReadFile(dockerfile)
 	_, err := parser.Parse(strings.NewReader(string(content)))
@@ -145,8 +189,8 @@ func processDockerfile(dockerfile string, envPath string, timeout int) (string, 
 	}
 	imageName := buildAndExtractFilesystem(dockerfile, envPath)
 	metadata := extractMetadata(imageName, dockerfile, envPath)
-	command := utils.GetFullContainerCommand(metadata)
-	utils.CreateDockerfile("Dockerfile.minimal.initial", envPath, command, nil, nil)
+	files, symLinks := parseCommand(metadata, envPath)
+	utils.CreateDockerfile("Dockerfile.minimal.initial", "Dockerfile.minimal.template", envPath, files, symLinks)
 	err = utils.ValidateDockerfile("Dockerfile.minimal.initial", envPath, filepath.Dir(dockerfile), timeout)
 	return imageName, envPath, metadata, err
 }
