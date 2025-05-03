@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -17,16 +16,7 @@ import (
 
 var log = logger.Log
 
-func getPID(containerName string) string {
-	for {
-		pid, err := exec.Command("docker", "inspect", "-f", "{{.State.Pid}}", containerName).Output()
-		if err == nil {
-			return strings.TrimSpace(string(pid))
-		}
-	}
-}
-
-func getStraceOutput(imageName string, containerName string, metadata types.DockerConfig, timeout int) string {
+func getStraceOutput(imageName string, stracePath string, containerName string, metadata types.DockerConfig, timeout int) string {
 	syscalls := []string{
 		"open",
 		"openat",
@@ -36,8 +26,9 @@ func getStraceOutput(imageName string, containerName string, metadata types.Dock
 	command := utils.GetFullContainerCommand(metadata)
 	hasSudo := utils.HasSudo()
 	command = fmt.Sprintf(
-		"docker run --rm --name %s -v /usr/local/bin/strace:/usr/bin/strace %s /usr/bin/strace -fe %s %s",
+		"docker run --rm --name %s -v %s:/usr/bin/strace %s /usr/bin/strace -fe %s %s",
 		containerName,
+		stracePath,
 		imageName,
 		strings.Join(syscalls, ","),
 		command,
@@ -65,18 +56,24 @@ func getStraceOutput(imageName string, containerName string, metadata types.Dock
 	return out.String()
 }
 
-func DynamicAnalysis(imageName string, envPath string, metadata types.DockerConfig, files map[string][]string, symLinks map[string]string, timeout int) error {
-	_, err := os.Stat("/usr/local/bin/strace")
-	if os.IsNotExist(err) {
-		log.Error("Non statically linked strace not found in /usr/local/bin/strace")
-		log.Error("Please compile strace statically and copy it to /usr/local/bin/strace")
-		log.Error("Skipping dynamic analysis")
+func DynamicAnalysis(imageName string, envPath string, metadata types.DockerConfig,
+	files map[string][]string, symLinks map[string]string, stracePath string, timeout int) error {
+	if !utils.CheckIfFileExists(stracePath, "") {
+		log.Error("Strace not found at path:", stracePath)
+		log.Error("Skipping dynamic analysis...")
 		return errors.New("strace not found")
+
+	}
+	_, err := exec.Command("ldd", stracePath).Output()
+	if err == nil {
+		log.Error("Strace is not statically linked")
+		log.Error("Skipping dynamic analysis...")
+		return errors.New("strace is not statically linked")
 	}
 
 	containerName := imageName + "-strace"
 	log.Info("Creating container:", containerName)
-	command := getStraceOutput(imageName, containerName, metadata, timeout)
+	command := getStraceOutput(imageName, stracePath, containerName, metadata, timeout)
 
 	log.Info("Strace output:\n", command)
 	return nil

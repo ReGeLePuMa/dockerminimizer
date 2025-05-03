@@ -15,10 +15,9 @@ import (
 
 var log = logger.Log
 
-func parseOutput(output []byte, envPath string) (map[string][]string, map[string]string) {
+func ParseOutput(output []byte, rootfsPath string) (map[string][]string, map[string]string) {
 	files := make(map[string][]string)
 	symLinks := make(map[string]string)
-	rootfsPath := envPath + "/rootfs"
 	scanner := bufio.NewScanner(bytes.NewReader(output))
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -61,7 +60,7 @@ func StaticAnalysis(imageName string, envPath string, metadata types.DockerConfi
 		log.Error("Failed to run ldd command\n" + err.Error())
 		return nil, nil, errors.New("failed to run ldd command")
 	}
-	libs, symlinkLibs := parseOutput(lddOutput, envPath)
+	libs, symlinkLibs := ParseOutput(lddOutput, envPath+"/rootfs")
 	utils.CreateDockerfile("Dockerfile.minimal.ldd", envPath, command, libs, symlinkLibs)
 	log.Info("Validating Dockerfile...")
 	return libs, symlinkLibs, utils.ValidateDockerfile("Dockerfile.minimal.ldd", envPath, context, timeout)

@@ -25,6 +25,9 @@ func Run(args types.Args) {
 	if args.Debug {
 		os.Setenv("debug", "true")
 	}
+	if args.StracePath == "" {
+		args.StracePath = "/usr/local/bin/strace"
+	}
 	logger.InitLogger()
 	log := logger.Log
 	log.Info("Starting dockerminimizer...")
@@ -45,7 +48,7 @@ func Run(args types.Args) {
 		return
 	}
 	log.Error("Static analysis failed, continuing with dynamic analysis")
-	strace.DynamicAnalysis(imageName, envPath, metadata, files, symLinks, args.Timeout)
+	strace.DynamicAnalysis(imageName, envPath, metadata, files, symLinks, args.StracePath, args.Timeout)
 	log.Info("Cleaning up...")
 	utils.Cleanup(envPath, imageName)
 }

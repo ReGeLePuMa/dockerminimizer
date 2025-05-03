@@ -6,6 +6,7 @@ type Args struct {
 	Timeout    int
 	MaxLimit   int
 	Debug      bool
+	StracePath string
 }
 
 type DockerConfig struct {
