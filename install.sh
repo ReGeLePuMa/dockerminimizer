@@ -8,7 +8,8 @@ install_docker() {
     fi
     sudo apt update && \
     sudo apt install -y uidmap iptables && \
-    curl -fsSL https://get.docker.com/rootless | sh
+    curl -fsSL https://get.docker.com/| sudo sh && \
+    dockerd-rootless-setuptool.sh install
 }
 
 #Install Go
@@ -19,39 +20,48 @@ install_go() {
     fi
     wget https://go.dev/dl/go1.24.1.linux-amd64.tar.gz
     sudo tar -C /usr/local -xzf go1.24.1.linux-amd64.tar.gz
-    echo "export PATH=$PATH:/usr/local/go/bin" >> ~/.bashrc
-    source ~/.bashrc
+    export PATH=$PATH:/usr/local/go/bin
+    echo "export PATH=$PATH:/usr/local/go/bin" | sudo tee -a /etc/profile
+    source /etc/profile
     rm go1.24.1.linux-amd64.tar.gz
 }
 
 #Install strace
 install_strace() {
+    read -r -p "Compile a static strace binary? [y/N] " response
+    case "$response" in
+        [yY][eE][sS]|[yY])
+            echo "Compiling a static strace binary..."
+            ;;
+        *)
+            echo "Skipping strace compilation."
+            return
+            ;;
+    esac
     sudo apt update && \ 
-    sudo apt install -y make gcc && \
-    git clone https://github.com/strace/strace.git && \
-    cd strace && \
+    sudo apt install -y make gcc autoconf gcc-multilib g++-multilib libc6-dev-i386 && \
+    git clone https://github.com/strace/strace.git tmp && \
+    cd tmp && \
     ./bootstrap && \
     ./configure LDFLAGS="-static -pthread" && \
     make -j$(nproc) && \
     sudo make install && \
     cd .. && \
-    rm -rf strace
+    rm -rf tmp
 }
 
 #Install dockerminimizer
 install_dockerminimizer() {
     go get .
-    go build -o dockerminimizer
+    go build -o dockerminimizer ./cmd
     sudo install -o root -g root -m 0755 dockerminimizer /usr/local/bin/dockerminimizer
 }
 
 main() {
-    CURRENT_DIR=$(pwd)
     install_docker
     install_go
     install_strace
     install_dockerminimizer
-    cd .. && rm -rf $CURRENT_DIR
 }
 
 main
