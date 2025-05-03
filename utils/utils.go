@@ -85,13 +85,13 @@ func copyFile(src string, dest string) error {
 }
 
 func GetFullContainerCommand(metadata types.DockerConfig) string {
-	command := ""
+	command := metadata.WorkingDir + "/"
 	if metadata.Entrypoint != nil {
 		command += strings.Join(metadata.Entrypoint, " ")
 	} else if metadata.Cmd != nil {
 		command += strings.Join(metadata.Cmd, " ")
 	}
-	return command
+	return filepath.Clean(command)
 }
 
 func GetContainerCommand(imageName string, envPath string, metadata types.DockerConfig) string {
