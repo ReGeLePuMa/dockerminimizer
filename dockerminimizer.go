@@ -29,7 +29,14 @@ func Run(args types.Args) {
 	log := logger.Log
 	log.Info("Starting dockerminimizer...")
 
-	imageName, envPath, metadata := preprocess.ProcessArgs(args)
+	imageName, envPath, metadata, err := preprocess.ProcessArgs(args)
+	if err == nil {
+		log.Error("Dockerfile is already minimal")
+		log.Info("Cleaning up...")
+		utils.Cleanup(envPath, imageName)
+		return
+	}
+	log.Info("Dockerfile is not minimal, starting analysis...")
 	files, symLinks, err := ldd.StaticAnalysis(imageName, envPath, metadata, filepath.Dir(args.Dockerfile), args.Timeout)
 	if err == nil {
 		log.Info("Static analysis succeeded")

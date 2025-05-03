@@ -44,7 +44,13 @@ func buildAndExtractFilesystem(dockerfile string, envPath string) string {
 		panic("Failed to build Docker image: " + err.Error())
 	}
 	hasSudo := utils.HasSudo()
-	cmd = exec.Command(hasSudo, "docker", "build", "-f", dockerfile, "-o", envPath+"/rootfs", buildContext)
+	cmd = exec.Command(
+		hasSudo,
+		"docker",
+		"build",
+		"-f", dockerfile,
+		"-o", "type=tar,dest="+envPath+"/rootfs.tar",
+		buildContext)
 	log.Info(cmd.String())
 	output, err = cmd.CombinedOutput()
 	log.Info(string(output))
@@ -52,6 +58,10 @@ func buildAndExtractFilesystem(dockerfile string, envPath string) string {
 		os.RemoveAll(envPath)
 		panic("Failed to extract filesystem from Docker image: " + err.Error())
 	}
+	os.MkdirAll(envPath+"/rootfs", 0777)
+	log.Info("Extracting filesystem to:", envPath+"/rootfs")
+	exec.Command(hasSudo, "tar", "-xf", envPath+"/rootfs.tar", "-C", envPath+"/rootfs").Run()
+	exec.Command(hasSudo, "rm", "-f", envPath+"/rootfs.tar").Run()
 	if os.Getuid() != 0 {
 		exec.Command("sudo", "chown", "-R", os.Getenv("USER")+":"+os.Getenv("USER"), envPath).Run()
 		exec.Command("sudo", "chmod", "-R", "755", envPath).Run()
@@ -112,17 +122,21 @@ func extractMetadata(imageName string, dockerfile string, envPath string) types.
 	for _, entrypoint := range config.Entrypoint {
 		entrypoints = append(entrypoints, fmt.Sprintf("\"%s\"", entrypoint))
 	}
-	writer.WriteString("ENTRYPOINT [" + strings.Join(entrypoints, ", ") + "]\n")
+	if len(entrypoints) > 0 {
+		writer.WriteString("ENTRYPOINT [" + strings.Join(entrypoints, ", ") + "]\n")
+	}
 	command := []string{}
 	for _, cmd := range config.Cmd {
 		command = append(command, fmt.Sprintf("\"%s\"", cmd))
 	}
-	writer.WriteString("CMD [" + strings.Join(command, ", ") + "]\n")
+	if len(command) > 0 {
+		writer.WriteString("CMD [" + strings.Join(command, ", ") + "]\n")
+	}
 	writer.Flush()
 	return config
 }
 
-func processDockerfile(dockerfile string, envPath string) (string, string, types.DockerConfig) {
+func processDockerfile(dockerfile string, envPath string, timeout int) (string, string, types.DockerConfig, error) {
 	content, _ := os.ReadFile(dockerfile)
 	_, err := parser.Parse(strings.NewReader(string(content)))
 	if err != nil {
@@ -131,20 +145,23 @@ func processDockerfile(dockerfile string, envPath string) (string, string, types
 	}
 	imageName := buildAndExtractFilesystem(dockerfile, envPath)
 	metadata := extractMetadata(imageName, dockerfile, envPath)
-	return imageName, envPath, metadata
+	command := utils.GetContainerCommand(imageName, envPath, metadata)
+	utils.CreateDockerfile("Dockerfile.minimal.initial", envPath, command, nil, nil)
+	err = utils.ValidateDockerfile("Dockerfile.minimal.initial", envPath, filepath.Dir(dockerfile), timeout)
+	return imageName, envPath, metadata, err
 }
 
-func processImage(imageName string, envPath string) (string, string, types.DockerConfig) {
+func processImage(imageName string, envPath string, timeout int) (string, string, types.DockerConfig, error) {
 	dockerfile, _ := os.Create("Dockerfile")
 	defer dockerfile.Close()
 	defer os.Remove("Dockerfile")
 	writer := bufio.NewWriter(dockerfile)
 	writer.WriteString("FROM " + imageName + "\n")
 	writer.Flush()
-	return processDockerfile("Dockerfile", envPath)
+	return processDockerfile("Dockerfile", envPath, timeout)
 }
 
-func ProcessArgs(args types.Args) (string, string, types.DockerConfig) {
+func ProcessArgs(args types.Args) (string, string, types.DockerConfig, error) {
 	envPath := createEnvironment()
 	if args.Image == "" {
 		_, err := os.Stat(args.Dockerfile)
@@ -152,7 +169,7 @@ func ProcessArgs(args types.Args) (string, string, types.DockerConfig) {
 			os.RemoveAll(envPath)
 			panic("Dockerfile does not exist")
 		}
-		return processDockerfile(args.Dockerfile, envPath)
+		return processDockerfile(args.Dockerfile, envPath, args.Timeout)
 	}
-	return processImage(args.Image, envPath)
+	return processImage(args.Image, envPath, args.Timeout)
 }

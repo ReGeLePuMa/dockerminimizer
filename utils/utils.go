@@ -96,9 +96,9 @@ func GetFullContainerCommand(metadata types.DockerConfig) string {
 
 func GetContainerCommand(imageName string, envPath string, metadata types.DockerConfig) string {
 	command := ""
-	if metadata.Entrypoint != nil {
+	if len(metadata.Entrypoint) > 0 {
 		command = filepath.Base(metadata.Entrypoint[0])
-	} else if metadata.Cmd != nil {
+	} else if len(metadata.Cmd) > 0 {
 		command = filepath.Base(metadata.Cmd[0])
 	}
 	if command == "" {
@@ -109,13 +109,18 @@ func GetContainerCommand(imageName string, envPath string, metadata types.Docker
 	hasSudo := HasSudo()
 
 	output, err := exec.Command(hasSudo, "chroot", envPath+"/rootfs", "which", command).CombinedOutput()
-	log.Info(string(output))
+	cmd := strings.TrimSpace(string(output))
 	if err != nil {
-		log.Error("Failed to find command in Docker image\n")
-		Cleanup(envPath, imageName)
-		os.Exit(1)
+		cmd = metadata.WorkingDir + "/" + command
+		if !CheckIfFileExists(filepath.Clean(cmd), envPath+"/rootfs") {
+			log.Error("Failed to find command in filesystem")
+
+			Cleanup(envPath, imageName)
+			os.Exit(1)
+		}
 	}
-	return strings.TrimSpace(string(output))
+	log.Info("Command found: " + cmd)
+	return cmd
 }
 
 func CreateDockerfile(dockerfile string, envPath string, command string, files map[string][]string, symLinks map[string]string) {
