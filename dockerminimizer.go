@@ -30,15 +30,15 @@ func Run(args types.Args) {
 	log.Info("Starting dockerminimizer...")
 
 	imageName, envPath, metadata := preprocess.ProcessArgs(args)
-	files, symLinks, err := ldd.StaticAnalysis(envPath, metadata, filepath.Dir(args.Dockerfile), args.Timeout)
+	files, symLinks, err := ldd.StaticAnalysis(imageName, envPath, metadata, filepath.Dir(args.Dockerfile), args.Timeout)
 	if err == nil {
 		log.Info("Static analysis succeeded")
 		log.Info("Cleaning up...")
-		utils.Cleanup(envPath)
+		utils.Cleanup(envPath, imageName)
 		return
 	}
 	log.Error("Static analysis failed, continuing with dynamic analysis")
 	strace.DynamicAnalysis(imageName, envPath, metadata, files, symLinks, args.Timeout)
 	log.Info("Cleaning up...")
-	utils.Cleanup(envPath)
+	utils.Cleanup(envPath, imageName)
 }

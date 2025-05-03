@@ -18,6 +18,7 @@ var log = logger.Log
 func parseOutput(output []byte, envPath string) (map[string][]string, map[string]string) {
 	files := make(map[string][]string)
 	symLinks := make(map[string]string)
+	rootfsPath := envPath + "/rootfs"
 	scanner := bufio.NewScanner(bytes.NewReader(output))
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -29,10 +30,10 @@ func parseOutput(output []byte, envPath string) (map[string][]string, map[string
 				continue
 			}
 			lib = utils.RealPath(lib)
-			if utils.CheckIfSymbolicLink(lib, envPath) {
-				symLinks[lib] = utils.ReadSymbolicLink(lib, envPath)
+			if utils.CheckIfSymbolicLink(lib, rootfsPath) {
+				symLinks[lib] = utils.ReadSymbolicLink(lib, rootfsPath)
 
-			} else if utils.CheckIfFileExists(lib, envPath) {
+			} else if utils.CheckIfFileExists(lib, rootfsPath) {
 				files[filepath.Dir(lib)] = utils.AppendIfMissing(files[filepath.Dir(lib)], lib)
 			}
 
@@ -41,17 +42,17 @@ func parseOutput(output []byte, envPath string) (map[string][]string, map[string
 		} else {
 			lib := strings.Split(strings.TrimSpace(line), " ")[0]
 			lib = utils.RealPath(lib)
-			if utils.CheckIfSymbolicLink(lib, envPath) {
-				symLinks[lib] = utils.ReadSymbolicLink(lib, envPath)
-			} else if utils.CheckIfFileExists(lib, envPath) {
+			if utils.CheckIfSymbolicLink(lib, rootfsPath) {
+				symLinks[lib] = utils.ReadSymbolicLink(lib, rootfsPath)
+			} else if utils.CheckIfFileExists(lib, rootfsPath) {
 				files[filepath.Dir(lib)] = utils.AppendIfMissing(files[filepath.Dir(lib)], lib)
 			}
 		}
 	}
 	return files, symLinks
 }
-func StaticAnalysis(envPath string, metadata types.DockerConfig, context string, timeout int) (map[string][]string, map[string]string, error) {
-	command := utils.GetContainerCommand(envPath, metadata)
+func StaticAnalysis(imageName string, envPath string, metadata types.DockerConfig, context string, timeout int) (map[string][]string, map[string]string, error) {
+	command := utils.GetContainerCommand(imageName, envPath, metadata)
 	hasSudo := utils.HasSudo()
 	lddCommand := hasSudo + " chroot " + envPath + "/rootfs ldd " + command
 	log.Info("Running command:", lddCommand)

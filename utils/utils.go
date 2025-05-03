@@ -25,12 +25,12 @@ func RealPath(path string) string {
 }
 
 func CheckIfFileExists(file string, envPath string) bool {
-	_, err := os.Stat(envPath + "/rootfs/" + file)
+	_, err := os.Stat(envPath + "/" + file)
 	return !os.IsNotExist(err)
 }
 
 func CheckIfSymbolicLink(file string, envPath string) bool {
-	info, err := os.Lstat(envPath + "/rootfs/" + file)
+	info, err := os.Lstat(envPath + "/" + file)
 	if err != nil {
 		return false
 	}
@@ -41,12 +41,12 @@ func CheckIfSymbolicLink(file string, envPath string) bool {
 }
 
 func ReadSymbolicLink(file string, envPath string) string {
-	link, _ := os.Readlink(envPath + "/rootfs/" + file)
+	link, _ := os.Readlink(envPath + "/" + file)
 	resolved := link
 	if !filepath.IsAbs(link) {
-		resolved = filepath.Join(filepath.Dir(envPath+"/rootfs/"+file), link)
+		resolved = filepath.Join(filepath.Dir(envPath+"/"+file), link)
 	}
-	return strings.TrimPrefix(resolved, envPath+"/rootfs/")
+	return strings.TrimPrefix(resolved, envPath+"/")
 }
 
 func AppendIfMissing[T comparable](slice []T, item T) []T {
@@ -94,7 +94,7 @@ func GetFullContainerCommand(metadata types.DockerConfig) string {
 	return command
 }
 
-func GetContainerCommand(envPath string, metadata types.DockerConfig) string {
+func GetContainerCommand(imageName string, envPath string, metadata types.DockerConfig) string {
 	command := ""
 	if metadata.Entrypoint != nil {
 		command = filepath.Base(metadata.Entrypoint[0])
@@ -103,7 +103,7 @@ func GetContainerCommand(envPath string, metadata types.DockerConfig) string {
 	}
 	if command == "" {
 		log.Error("Failed to find command in Docker image\n")
-		Cleanup(envPath)
+		Cleanup(envPath, imageName)
 		os.Exit(1)
 	}
 	hasSudo := HasSudo()
@@ -112,7 +112,7 @@ func GetContainerCommand(envPath string, metadata types.DockerConfig) string {
 	log.Info(string(output))
 	if err != nil {
 		log.Error("Failed to find command in Docker image\n")
-		Cleanup(envPath)
+		Cleanup(envPath, imageName)
 		os.Exit(1)
 	}
 	return strings.TrimSpace(string(output))
@@ -180,8 +180,11 @@ func ValidateDockerfile(dockerfile string, envPath string, context string, timeo
 	return nil
 }
 
-func Cleanup(envPath string) {
-	exec.Command("docker", "image", "prune", "-af").CombinedOutput()
+func Cleanup(envPath string, imageName string) {
+	command := fmt.Sprintf("docker rmi -f $(docker images %s --format \"{{.Repository}}:{{.Tag}}\")", imageName)
+	log.Info("Cleaning up Docker images...")
+	log.Info("Running command: " + command)
+	exec.Command("sh", "-c", command).CombinedOutput()
 	os.Clearenv()
 	err := os.RemoveAll(envPath)
 	if err != nil {
