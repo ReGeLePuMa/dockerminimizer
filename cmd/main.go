@@ -1,0 +1,29 @@
+package main
+
+import (
+	"flag"
+
+	"github.com/regelepuma/dockerminimizer"
+	"github.com/regelepuma/dockerminimizer/types"
+)
+
+func parseArgs() types.Args {
+	dockerfile := flag.String("file", "./Dockerfile", "Path to the Dockerfile")
+	image := flag.String("image", "", "Name of the Docker image")
+	maxLimit := flag.Int("max_limit", 10, "Maximum number of retries")
+	debug := flag.Bool("debug", false, "Enable debug mode")
+	timeout := flag.Int("timeout", 30, "How long should `strace` trace the command")
+	flag.Parse()
+
+	return types.Args{
+		Dockerfile: *dockerfile,
+		Image:      *image,
+		MaxLimit:   *maxLimit,
+		Debug:      *debug,
+		Timeout:    *timeout,
+	}
+}
+
+func main() {
+	dockerminimizer.Run(parseArgs())
+}

@@ -3,6 +3,9 @@ package types
 type Args struct {
 	Dockerfile string
 	Image      string
+	Timeout    int
+	MaxLimit   int
+	Debug      bool
 }
 
 type DockerConfig struct {

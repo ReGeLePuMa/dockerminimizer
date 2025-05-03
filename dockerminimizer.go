@@ -1,7 +1,6 @@
-package main
+package dockerminimizer
 
 import (
-	"flag"
 	"os"
 	"path/filepath"
 
@@ -13,26 +12,25 @@ import (
 	"github.com/regelepuma/dockerminimizer/utils"
 )
 
-func main() {
-
-	dockerfile := flag.String("file", "./Dockerfile", "Path to the Dockerfile")
-	image := flag.String("image", "", "Name of the Docker image")
-	flag.Int("max_limit", 10, "Maximum number of retries")
-	debug := flag.Bool("debug", false, "Enable debug mode")
-	timeout := flag.Int("timeout", 30, "How long should `strace` trace the command")
-	flag.Parse()
-	if *debug {
+func Run(args types.Args) {
+	if args.Dockerfile == "" {
+		args.Dockerfile = "./Dockerfile"
+	}
+	if args.MaxLimit == 0 {
+		args.MaxLimit = 10
+	}
+	if args.Timeout == 0 {
+		args.Timeout = 30
+	}
+	if args.Debug {
 		os.Setenv("debug", "true")
 	}
 	logger.InitLogger()
 	log := logger.Log
+	log.Info("Starting dockerminimizer...")
 
-	args := types.Args{
-		Dockerfile: *dockerfile,
-		Image:      *image,
-	}
 	imageName, envPath, metadata := preprocess.ProcessArgs(args)
-	files, symLinks, err := ldd.StaticAnalysis(envPath, metadata, filepath.Dir(*dockerfile), *timeout)
+	files, symLinks, err := ldd.StaticAnalysis(envPath, metadata, filepath.Dir(args.Dockerfile), args.Timeout)
 	if err == nil {
 		log.Info("Static analysis succeeded")
 		log.Info("Cleaning up...")
@@ -40,8 +38,7 @@ func main() {
 		return
 	}
 	log.Error("Static analysis failed, continuing with dynamic analysis")
-	strace.DynamicAnalysis(imageName, envPath, metadata, files, symLinks, *timeout)
+	strace.DynamicAnalysis(imageName, envPath, metadata, files, symLinks, args.Timeout)
 	log.Info("Cleaning up...")
 	utils.Cleanup(envPath)
-
 }
