@@ -61,7 +61,8 @@ func StaticAnalysis(imageName string, envPath string, metadata types.DockerConfi
 		return nil, nil, errors.New("failed to run ldd command")
 	}
 	libs, symlinkLibs := ParseOutput(lddOutput, envPath+"/rootfs")
-	utils.CreateDockerfile("Dockerfile.minimal.ldd", envPath, command, libs, symlinkLibs)
+	fullCommand := utils.GetFullContainerCommand(metadata)
+	utils.CreateDockerfile("Dockerfile.minimal.ldd", envPath, fullCommand, libs, symlinkLibs)
 	log.Info("Validating Dockerfile...")
 	return libs, symlinkLibs, utils.ValidateDockerfile("Dockerfile.minimal.ldd", envPath, context, timeout)
 }

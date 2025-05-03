@@ -145,7 +145,7 @@ func processDockerfile(dockerfile string, envPath string, timeout int) (string, 
 	}
 	imageName := buildAndExtractFilesystem(dockerfile, envPath)
 	metadata := extractMetadata(imageName, dockerfile, envPath)
-	command := utils.GetContainerCommand(imageName, envPath, metadata)
+	command := utils.GetFullContainerCommand(metadata)
 	utils.CreateDockerfile("Dockerfile.minimal.initial", envPath, command, nil, nil)
 	err = utils.ValidateDockerfile("Dockerfile.minimal.initial", envPath, filepath.Dir(dockerfile), timeout)
 	return imageName, envPath, metadata, err
