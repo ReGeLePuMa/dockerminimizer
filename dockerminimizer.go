@@ -28,6 +28,7 @@ func Run(args types.Args) {
 	if args.StracePath == "" {
 		args.StracePath = "/usr/local/bin/strace"
 	}
+
 	logger.InitLogger()
 	log := logger.Log
 	log.Info("Starting dockerminimizer...")
@@ -40,7 +41,8 @@ func Run(args types.Args) {
 		return
 	}
 	log.Info("Dockerfile is not minimal, starting analysis...")
-	files, symLinks, err := ldd.StaticAnalysis(imageName, envPath, metadata, filepath.Dir(args.Dockerfile), args.Timeout)
+	context := filepath.Dir(args.Dockerfile)
+	files, symLinks, err := ldd.StaticAnalysis(imageName, envPath, metadata, context, args.Timeout)
 	if err == nil {
 		log.Info("Static analysis succeeded")
 		log.Info("Cleaning up...")
@@ -48,7 +50,20 @@ func Run(args types.Args) {
 		return
 	}
 	log.Error("Static analysis failed, continuing with dynamic analysis")
-	strace.DynamicAnalysis(imageName, envPath, metadata, files, symLinks, args.StracePath, args.Timeout)
+	err = strace.DynamicAnalysis(imageName, envPath, metadata, files,
+		symLinks, args.StracePath, context, args.Timeout)
+	if err == nil {
+		log.Info("Dynamic analysis succeeded")
+		log.Info("Cleaning up...")
+		utils.Cleanup(envPath, imageName)
+		return
+	}
+	if !args.BinarySearch {
+		utils.CopyFile(envPath+"/Dockerfile.minimal.strace", "Dockerfile.minimal")
+		log.Info("Cleaning up...")
+		utils.Cleanup(envPath, imageName)
+		return
+	}
 	log.Info("Cleaning up...")
 	utils.Cleanup(envPath, imageName)
 }

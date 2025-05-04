@@ -25,8 +25,8 @@ func RealPath(path string) string {
 }
 
 func CheckIfFileExists(file string, envPath string) bool {
-	_, err := os.Stat(envPath + "/" + file)
-	return !os.IsNotExist(err)
+	info, err := os.Stat(envPath + "/" + file)
+	return !os.IsNotExist(err) && !info.IsDir()
 }
 
 func CheckIfSymbolicLink(file string, envPath string) bool {
@@ -60,7 +60,7 @@ func HasSudo() string {
 	return "sudo"
 }
 
-func copyFile(src string, dest string) error {
+func CopyFile(src string, dest string) error {
 	sourceFile, err := os.Open(src)
 	if err != nil {
 		return err
@@ -155,13 +155,19 @@ func CreateDockerfile(dockerfile string, template string, envPath string, files 
 	}
 	writer.Flush()
 	writer.WriteString("\n")
-	for dir, libs := range files {
+	for dir, file := range files {
+		quoted := make([]string, len(file))
+		for i, s := range file {
+			quoted[i] = fmt.Sprintf("\"%s\"", s)
+		}
+		quoted = append(quoted, fmt.Sprintf("\"%s/\"", dir))
+		quoted = slices.Compact(quoted)
 		log.Println("Copying files from " + dir)
-		writer.WriteString("COPY --from=builder " + strings.Join(libs, " ") + " " + dir + "/\n")
+		writer.WriteString("COPY --from=builder [" + strings.Join(quoted, ", ") + "]\n")
 	}
 	for link, target := range symLinks {
 		log.Println("Copying symbolic link " + link + " to " + target)
-		writer.WriteString("COPY --from=builder " + target + " " + link + "\n")
+		writer.WriteString("COPY --from=builder [\"" + target + "\",  \"" + link + "\"]\n")
 	}
 	writer.WriteString("\n")
 	writer.Flush()
@@ -198,7 +204,7 @@ func ValidateDockerfile(dockerfile string, envPath string, context string, timeo
 		log.Error("Failed to run Docker image\n")
 		return errors.New("failed to run Docker image")
 	}
-	copyFile(envPath+"/"+dockerfile, "Dockerfile.minimal")
+	CopyFile(envPath+"/"+dockerfile, "Dockerfile.minimal")
 	return nil
 }
 

@@ -14,15 +14,18 @@ func parseArgs() types.Args {
 	debug := flag.Bool("debug", false, "Enable debug mode")
 	timeout := flag.Int("timeout", 30, "How long the container should run before being declared healthy")
 	stracePath := flag.String("strace_path", "/usr/local/bin/strace", "Path to the statically linked strace binary")
+	binarySearch := flag.Bool("binary_search", true, "Continue with binary search if dynamic analysis fails")
+
 	flag.Parse()
 
 	return types.Args{
-		Dockerfile: *dockerfile,
-		Image:      *image,
-		MaxLimit:   *maxLimit,
-		Debug:      *debug,
-		Timeout:    *timeout,
-		StracePath: *stracePath,
+		Dockerfile:   *dockerfile,
+		Image:        *image,
+		MaxLimit:     *maxLimit,
+		Debug:        *debug,
+		Timeout:      *timeout,
+		StracePath:   *stracePath,
+		BinarySearch: *binarySearch,
 	}
 }
 
