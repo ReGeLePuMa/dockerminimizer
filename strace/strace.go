@@ -26,7 +26,7 @@ func getStraceOutput(imageName string, stracePath string, containerName string, 
 	command := utils.GetFullContainerCommand(imageName, envPath, metadata)
 	hasSudo := utils.HasSudo()
 	command = fmt.Sprintf(
-		"docker run --rm --name %s -v %s:/usr/bin/strace %s /usr/bin/strace -fe %s %s",
+		"docker run --rm --name %s --entrypoint \"\" -v %s:/usr/bin/strace %s /usr/bin/strace -fe %s %s",
 		containerName,
 		stracePath,
 		imageName,

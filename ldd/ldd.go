@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"errors"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/regelepuma/dockerminimizer/logger"
@@ -28,24 +27,13 @@ func ParseOutput(output []byte, rootfsPath string) (map[string][]string, map[str
 			if strings.Contains(lib, "not found") {
 				continue
 			}
-			lib = utils.RealPath(lib)
-			if utils.CheckIfSymbolicLink(lib, rootfsPath) {
-				symLinks[lib] = utils.ReadSymbolicLink(lib, rootfsPath)
-
-			} else if utils.CheckIfFileExists(lib, rootfsPath) {
-				files[filepath.Dir(lib)] = utils.AppendIfMissing(files[filepath.Dir(lib)], lib)
-			}
+			utils.AddFilesToDockerfile(lib, files, symLinks, rootfsPath)
 
 		} else if strings.Contains(line, "not found") {
 			continue
 		} else {
 			lib := strings.Split(strings.TrimSpace(line), " ")[0]
-			lib = utils.RealPath(lib)
-			if utils.CheckIfSymbolicLink(lib, rootfsPath) {
-				symLinks[lib] = utils.ReadSymbolicLink(lib, rootfsPath)
-			} else if utils.CheckIfFileExists(lib, rootfsPath) {
-				files[filepath.Dir(lib)] = utils.AppendIfMissing(files[filepath.Dir(lib)], lib)
-			}
+			utils.AddFilesToDockerfile(lib, files, symLinks, rootfsPath)
 		}
 	}
 	return files, symLinks

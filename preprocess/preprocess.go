@@ -140,12 +140,8 @@ func parseFile(file string, envPath string, metadata types.DockerConfig,
 	files map[string][]string, symLinks map[string]string) {
 	workDir := filepath.Clean(envPath + "/rootfs/" + metadata.WorkingDir)
 	if utils.CheckIfFileExists(file, workDir) {
-		filePath := filepath.Clean(metadata.WorkingDir + "/" + file)
-		if utils.CheckIfSymbolicLink(file, workDir) {
-			symLinks[filePath] = utils.ReadSymbolicLink(filePath, envPath+"/rootfs")
-		} else {
-			files[filepath.Dir(filePath)] = utils.AppendIfMissing(files[filepath.Dir(filePath)], filePath)
-		}
+		filePath := metadata.WorkingDir + "/" + file
+		utils.AddFilesToDockerfile(filePath, files, symLinks, envPath+"/rootfs")
 	} else {
 		hasSudo := utils.HasSudo()
 		output, err := exec.Command(hasSudo, "chroot", envPath+"/rootfs", "which", file).CombinedOutput()
@@ -156,15 +152,7 @@ func parseFile(file string, envPath string, metadata types.DockerConfig,
 		if cmd == "" {
 			return
 		}
-		cmd = filepath.Clean(cmd)
-		if !utils.CheckIfFileExists(cmd, envPath+"/rootfs") {
-			return
-		}
-		if utils.CheckIfSymbolicLink(cmd, envPath+"/rootfs") {
-			symLinks[cmd] = utils.ReadSymbolicLink(cmd, envPath+"/rootfs")
-		} else {
-			files[filepath.Dir(cmd)] = utils.AppendIfMissing(files[filepath.Dir(cmd)], cmd)
-		}
+		utils.AddFilesToDockerfile(cmd, files, symLinks, envPath+"/rootfs")
 	}
 }
 

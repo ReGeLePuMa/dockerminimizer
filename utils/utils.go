@@ -34,10 +34,7 @@ func CheckIfSymbolicLink(file string, envPath string) bool {
 	if err != nil {
 		return false
 	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return true
-	}
-	return false
+	return info.Mode()&os.ModeSymlink != 0
 }
 
 func ReadSymbolicLink(file string, envPath string) string {
@@ -133,6 +130,17 @@ func GetContainerCommand(imageName string, envPath string, metadata types.Docker
 	}
 	log.Info("Command found: " + cmd)
 	return cmd
+}
+
+func AddFilesToDockerfile(file string, files map[string][]string, symLinks map[string]string, rootfsPath string) {
+	file = RealPath(file)
+	if CheckIfFileExists(file, rootfsPath) {
+		if CheckIfSymbolicLink(file, rootfsPath) {
+			symLinks[file] = ReadSymbolicLink(file, rootfsPath)
+		} else {
+			files[filepath.Dir(file)] = AppendIfMissing(files[filepath.Dir(file)], file)
+		}
+	}
 }
 
 func CreateDockerfile(dockerfile string, template string, envPath string, files map[string][]string, symLinks map[string]string) {
