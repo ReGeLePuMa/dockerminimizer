@@ -135,6 +135,14 @@ func parseShebang(imageName string, containerName string, syscalls []string,
 	return files, symLinks
 }
 
+func parseCommand(imageName string, containerName string, syscalls []string,
+	files map[string][]string, symLinks map[string]string, envPath string, metadata types.DockerConfig, timeout int) (map[string][]string, map[string]string) {
+	output := getStraceOutput(imageName, envPath+"/strace", envPath+"/log.txt", syscalls,
+		containerName, utils.GetFullContainerCommand(imageName, envPath, metadata), envPath, metadata, timeout)
+	parseOutput(output, syscalls, files, symLinks, envPath)
+	return files, symLinks
+}
+
 func DynamicAnalysis(imageName string, envPath string, metadata types.DockerConfig,
 	files map[string][]string, symLinks map[string]string, stracePath string, context string, timeout int) error {
 	if !utils.CheckIfFileExists(stracePath, "") {
@@ -170,9 +178,7 @@ func DynamicAnalysis(imageName string, envPath string, metadata types.DockerConf
 	containerName := imageName + "-strace"
 	log.Info("Creating container:", containerName)
 	files, symLinks = parseShebang(imageName, containerName, syscalls, files, symLinks, envPath, metadata, timeout)
-	output := getStraceOutput(imageName, envPath+"/strace", envPath+"/log.txt", syscalls,
-		containerName, utils.GetFullContainerCommand(imageName, envPath, metadata), envPath, metadata, timeout)
-	parseOutput(output, syscalls, files, symLinks, envPath)
+	files, symLinks = parseCommand(imageName, containerName, syscalls, files, symLinks, envPath, metadata, timeout)
 	utils.CreateDockerfile("Dockerfile.minimal.strace", "Dockerfile.minimal.template", envPath, files, symLinks)
 	log.Info("Validating Dockerfile...")
 	return utils.ValidateDockerfile("Dockerfile.minimal.strace", envPath, context, timeout)
