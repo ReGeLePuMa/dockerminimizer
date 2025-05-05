@@ -186,12 +186,13 @@ func ValidateDockerfile(dockerfile string, envPath string, context string, timeo
 	}
 
 	ok := true
-	cmd := exec.Command("docker", "run", "--rm", imageName)
+	containerName := strings.ReplaceAll(imageName, ":", "-") + "-test-" + tagName
+	cmd := exec.Command("docker", "run", "--rm", "--name", containerName, imageName)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	timer := time.AfterFunc(time.Duration(timeout)*time.Second, func() {
 		if cmd.Process != nil {
 			log.Info(fmt.Sprintf("%d seconds have passed. Killing strace.", timeout))
-			exec.Command("docker", "stop", "-t", "5", imageName).Run()
+			exec.Command("docker", "stop", "-t", "5", containerName).Run()
 			exec.Command(HasSudo(), "kill", "-15", fmt.Sprintf("-%d", cmd.Process.Pid)).Run()
 			ok = false
 		}
@@ -200,7 +201,7 @@ func ValidateDockerfile(dockerfile string, envPath string, context string, timeo
 	output, err = cmd.CombinedOutput()
 
 	log.Info(string(output))
-	if err != nil || !ok {
+	if ok && err != nil {
 		log.Error("Failed to run Docker image\n")
 		return errors.New("failed to run Docker image")
 	}
