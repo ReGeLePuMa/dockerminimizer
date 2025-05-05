@@ -1,9 +1,9 @@
 package strace
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -17,13 +17,14 @@ import (
 
 var log = logger.Log
 
-func getStraceOutput(imageName string, stracePath string, syscalls []string, containerName string, envPath string, metadata types.DockerConfig, timeout int) string {
+func getStraceOutput(imageName string, stracePath string, logPath string, syscalls []string, containerName string, envPath string, metadata types.DockerConfig, timeout int) string {
 	command := utils.GetFullContainerCommand(imageName, envPath, metadata)
 	hasSudo := utils.HasSudo()
 	command = fmt.Sprintf(
-		"docker run --rm --name %s --entrypoint \"\" -v %s:/usr/bin/strace %s /usr/bin/strace -fe %s %s",
+		"docker run --rm --name %s --entrypoint \"\" -v %s:/usr/bin/strace -v %s:/log.txt %s /usr/bin/strace -o /log.txt -fe %s %s",
 		containerName,
 		stracePath,
+		logPath,
 		imageName,
 		strings.Join(syscalls, ","),
 		command,
@@ -31,8 +32,6 @@ func getStraceOutput(imageName string, stracePath string, syscalls []string, con
 	cmd := exec.Command("sh", "-c", command)
 	log.Info("Running command:", command)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	var out bytes.Buffer
-	cmd.Stderr = &out
 	timer := time.AfterFunc(time.Duration(timeout)*time.Second, func() {
 		if cmd.Process != nil {
 			log.Info(fmt.Sprintf("%d seconds have passed. Killing strace.", timeout))
@@ -48,7 +47,8 @@ func getStraceOutput(imageName string, stracePath string, syscalls []string, con
 		return ""
 	}
 	cmd.Wait()
-	return out.String()
+	data, err := os.ReadFile(logPath)
+	return string(data)
 }
 
 func parseOutput(output string, syscalls []string, files map[string][]string, symLinks map[string]string, envPath string) {
@@ -69,6 +69,18 @@ func parseOutput(output string, syscalls []string, files map[string][]string, sy
 	}
 }
 
+func prepareEnvironment(envPath string, stracePath string) error {
+	err := utils.CopyFile(stracePath, envPath+"/strace")
+	if err != nil {
+		log.Error("Failed to copy strace to container rootfs")
+		return errors.New("failed to copy strace to container rootfs")
+	}
+	os.Chmod(envPath+"/strace", 0755)
+	_, err = os.Create(envPath + "/log.txt")
+
+	return err
+}
+
 func DynamicAnalysis(imageName string, envPath string, metadata types.DockerConfig,
 	files map[string][]string, symLinks map[string]string, stracePath string, context string, timeout int) error {
 	if !utils.CheckIfFileExists(stracePath, "") {
@@ -82,6 +94,12 @@ func DynamicAnalysis(imageName string, envPath string, metadata types.DockerConf
 		log.Error("Strace is not statically linked")
 		log.Error("Skipping dynamic analysis...")
 		return errors.New("strace is not statically linked")
+	}
+	err = prepareEnvironment(envPath, stracePath)
+	if err != nil {
+		log.Error("Failed to prepare environment for strace")
+		log.Error("Skipping dynamic analysis...")
+		return errors.New("failed to prepare environment for strace")
 	}
 	syscalls := []string{
 		"open",
@@ -97,7 +115,7 @@ func DynamicAnalysis(imageName string, envPath string, metadata types.DockerConf
 	}
 	containerName := imageName + "-strace"
 	log.Info("Creating container:", containerName)
-	output := getStraceOutput(imageName, stracePath, syscalls, containerName, envPath, metadata, timeout)
+	output := getStraceOutput(imageName, envPath+"/strace", envPath+"/log.txt", syscalls, containerName, envPath, metadata, timeout)
 	parseOutput(output, syscalls, files, symLinks, envPath)
 	utils.CreateDockerfile("Dockerfile.minimal.strace", "Dockerfile.minimal.template", envPath, files, symLinks)
 	log.Info("Validating Dockerfile...")
