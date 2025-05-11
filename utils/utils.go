@@ -160,7 +160,7 @@ func CreateDockerfile(dockerfile string, template string, envPath string, files 
 		for i, s := range file {
 			quoted[i] = fmt.Sprintf("\"%s\"", s)
 		}
-		quoted = append(quoted, fmt.Sprintf("\"%s/\"", dir))
+		quoted = append(quoted, filepath.Clean(fmt.Sprintf("\"%s/\"", dir)))
 		quoted = slices.Compact(quoted)
 		log.Println("Copying files from " + dir)
 		writer.WriteString("COPY --from=builder [" + strings.Join(quoted, ", ") + "]\n")

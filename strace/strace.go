@@ -21,7 +21,7 @@ var log = logger.Log
 func getStraceOutput(imageName string, stracePath string, logPath string, syscalls []string, containerName string, command string, envPath string, metadata types.DockerConfig, timeout int) string {
 	hasSudo := utils.HasSudo()
 	command = fmt.Sprintf(
-		"docker run --rm --name %s --entrypoint \"\" -v %s:/usr/bin/strace -v %s:/log.txt %s /usr/bin/strace -o /log.txt -fe %s %s",
+		"docker run --rm --name %s --entrypoint \"\" -v %s:/usr/bin/strace -v %s:/log.txt %s /usr/bin/strace -s 9999 -o /log.txt -fe %s %s",
 		containerName,
 		stracePath,
 		logPath,
@@ -52,18 +52,17 @@ func getStraceOutput(imageName string, stracePath string, logPath string, syscal
 }
 
 func parseOutput(output string, syscalls []string, files map[string][]string, symLinks map[string]string, envPath string) {
-	regexes := make(map[string]*regexp.Regexp)
 	for _, syscall := range syscalls {
-		regexes[syscall] = regexp.MustCompile(syscall + `\([^"]*?"([^"]+)"`)
-	}
-	for line := range strings.SplitSeq(output, "\n") {
-		for _, syscall := range syscalls {
-			if regexes[syscall].MatchString(line) {
-				match := regexes[syscall].FindStringSubmatch(line)
+		regex := regexp.MustCompile(syscall + `\([^"]*?"([^"]+)"`)
+		if regex.MatchString(output) {
+			matches := regex.FindAllStringSubmatch(output, -1)
+			for _, match := range matches {
 				if len(match) > 1 {
-					utils.AddFilesToDockerfile(match[1], files, symLinks, envPath+"/rootfs")
+					captures := match[1:]
+					for _, capture := range captures {
+						utils.AddFilesToDockerfile(capture, files, symLinks, envPath+"/rootfs")
+					}
 				}
-				break
 			}
 		}
 	}
