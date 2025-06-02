@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/regelepuma/dockerminimizer/logger"
 	"github.com/regelepuma/dockerminimizer/types"
+	"github.com/samber/lo"
 )
 
 var log = logger.Log
@@ -44,6 +47,14 @@ func ReadSymbolicLink(file string, envPath string) string {
 		resolved = filepath.Join(filepath.Dir(envPath+"/"+file), link)
 	}
 	return strings.TrimPrefix(resolved, envPath)
+}
+
+func RemoveElement[T comparable](slice []T, item T) []T {
+	index := slices.Index(slice, item)
+	if index == -1 {
+		return slice
+	}
+	return slices.Delete(slice, index, index+1)
 }
 
 func AppendIfMissing[T comparable](slice []T, item T) []T {
@@ -130,6 +141,49 @@ func GetContainerCommand(imageName string, envPath string, metadata types.Docker
 	}
 	log.Info("Command found: " + cmd)
 	return cmd
+}
+
+func iterToSlice[T any](s iter.Seq[T]) []T {
+	out := []T{}
+	for v := range s {
+		out = append(out, v)
+	}
+	return out
+}
+
+func lowestCommonAncestor(s1, s2 string) string {
+	seg1 := lo.Filter(strings.Split(s1, "/"), func(seg string, _ int) bool {
+		return seg != ""
+	})
+	seg2 := lo.Filter(strings.Split(s2, "/"), func(seg string, _ int) bool {
+		return seg != ""
+	})
+
+	minLen := min(len(seg1), len(seg2))
+	i := 0
+	for i < minLen && seg1[i] == seg2[i] {
+		i++
+	}
+	if i == 0 {
+		return "/"
+	}
+	return filepath.Clean("/" + strings.Join(seg1[:i], "/"))
+}
+
+func ShrinkDictionary(dict map[string][]string) map[string][]string {
+	const MAX_LIMIT = 127
+	for len(dict) > MAX_LIMIT {
+		keys := iterToSlice(maps.Keys(dict))
+		slices.SortFunc(keys, func(a, b string) int {
+			return strings.Compare(a, b)
+		})
+		for i := 0; i < len(keys)-1; i += 2 {
+			delete(dict, keys[i])
+			delete(dict, keys[i+1])
+			dict[lowestCommonAncestor(keys[i], keys[i+1])] = []string{keys[i], keys[i+1]}
+		}
+	}
+	return dict
 }
 
 func AddFilesToDockerfile(file string, files map[string][]string, symLinks map[string]string, rootfsPath string) {

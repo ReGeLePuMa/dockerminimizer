@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	binarysearch "github.com/regelepuma/dockerminimizer/binary_search"
 	"github.com/regelepuma/dockerminimizer/ldd"
 	"github.com/regelepuma/dockerminimizer/logger"
 	"github.com/regelepuma/dockerminimizer/preprocess"
@@ -63,6 +64,10 @@ func Run(args types.Args) {
 		log.Info("Cleaning up...")
 		utils.Cleanup(envPath, imageName)
 		return
+	}
+	err = binarysearch.BinarySearch(envPath, args.MaxLimit, context, args.Timeout)
+	if err != nil {
+		os.Remove("Dockerfile.minimal")
 	}
 	log.Info("Cleaning up...")
 	utils.Cleanup(envPath, imageName)
