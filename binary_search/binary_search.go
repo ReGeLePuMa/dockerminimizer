@@ -1,21 +1,70 @@
 package binarysearch
 
 import (
+	"archive/tar"
+	"bufio"
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
-	"math/rand/v2"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"slices"
 
+	"github.com/barkimedes/go-deepcopy"
 	"github.com/regelepuma/dockerminimizer/logger"
 	"github.com/regelepuma/dockerminimizer/utils"
 )
 
 var log = logger.Log
+
+func addFileToTar(tarWriter *tar.Writer, file string, envPath string) error {
+	filePath := envPath + "/rootfs" + file
+	fd, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer fd.Close()
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return err
+	}
+
+	header, err := tar.FileInfoHeader(info, "")
+	if err != nil {
+		return err
+	}
+	header.Name = file
+	if err := tarWriter.WriteHeader(header); err != nil {
+		return err
+	}
+
+	_, err = io.Copy(tarWriter, fd)
+	return err
+}
+
+func buildTarArchive(files map[string][]string, tarFilename string, envPath string, step int) error {
+	tarFile, err := os.Create(tarFilename)
+	if err != nil {
+		log.Error("Failed to create tar file: " + err.Error())
+		return err
+	}
+	defer tarFile.Close()
+	tarWriter := tar.NewWriter(tarFile)
+	for _, fileList := range files {
+		for _, file := range fileList {
+			err := addFileToTar(tarWriter, file, envPath)
+			if err != nil {
+				log.Info("Failed to add %s: %v\n", file, err)
+			}
+		}
+	}
+	return nil
+}
 
 func parseFilesystem(rootfsPath string) (map[string][]string,
 	map[string][]string, error) {
@@ -55,10 +104,15 @@ func parseFilesystem(rootfsPath string) (map[string][]string,
 
 func splitFilesystem(usedFiles map[string][]string,
 	unusedFiles map[string][]string) (map[string][]string, map[string][]string) {
+	cpyUsedFiles, _ := deepcopy.Anything(usedFiles)
+	cpyUnusedFiles, _ := deepcopy.Anything(unusedFiles)
+	usedFiles, _ = cpyUsedFiles.(map[string][]string)
+	unusedFiles, _ = cpyUnusedFiles.(map[string][]string)
 	for dir, files := range unusedFiles {
 		originalFiles := slices.Clone(files)
 		for _, file := range originalFiles {
-			ok := rand.Int() % 2
+			flag, _ := rand.Int(rand.Reader, big.NewInt(2))
+			ok := flag.Int64()
 			if ok == 0 {
 				usedFiles[dir] = utils.AppendIfMissing(usedFiles[dir], file)
 				unusedFiles[dir] = utils.RemoveElement(unusedFiles[dir], file)
@@ -71,6 +125,24 @@ func splitFilesystem(usedFiles map[string][]string,
 	return usedFiles, unusedFiles
 }
 
+func addTarToDockerfile(tarFilename string, dockerfile string, template string, envPath string) error {
+	file, _ := os.Create(envPath + "/" + dockerfile)
+	defer file.Close()
+	srcFile, _ := os.Open(envPath + "/" + template)
+	defer srcFile.Close()
+	writer := bufio.NewWriter(file)
+	_, err := io.Copy(writer, srcFile)
+	if err != nil {
+		log.Fatalf("Failed to copy template content: %v", err)
+	}
+	writer.Flush()
+	writer.WriteString("\n")
+	writer.WriteString(fmt.Sprintf("ADD  %s /\n", tarFilename))
+	writer.WriteString("\n")
+	writer.Flush()
+	return nil
+}
+
 func binarySearchStep(envPath string, context string, timeout int, step int, usedFiles map[string][]string,
 	unusedFiles map[string][]string) (map[string][]string, map[string][]string, error) {
 	for {
@@ -79,10 +151,16 @@ func binarySearchStep(envPath string, context string, timeout int, step int, use
 		}
 		usedFiles, unusedFiles = splitFilesystem(usedFiles, unusedFiles)
 		filename := fmt.Sprintf("Dockerfile.minimal.binary_search.%d", step)
-		usedFiles = utils.ShrinkDictionary(usedFiles)
-		utils.CreateDockerfile(filename, "Dockerfile.minimal.template", envPath, usedFiles, nil)
-		err := utils.ValidateDockerfile(filename, envPath, context, timeout)
+		tarFilename := fmt.Sprintf("%s/rootfs/files-%d.tar", envPath, step)
+		buildTarArchive(usedFiles, tarFilename, envPath, step)
+		err := addTarToDockerfile(tarFilename, filename, "Dockerfile.minimal.template", envPath)
+		if err != nil {
+			log.Error("Error adding tar to Dockerfile:", err)
+			return nil, nil, errors.New("error adding tar to Dockerfile")
+		}
+		err = utils.ValidateDockerfile(filename, envPath, context, timeout)
 		if err == nil {
+			log.Info("Binary search step", step, "succeeded.")
 			return make(map[string][]string), usedFiles, nil
 		}
 	}

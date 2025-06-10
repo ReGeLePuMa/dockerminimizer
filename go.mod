@@ -3,6 +3,7 @@ module github.com/regelepuma/dockerminimizer
 go 1.24.1
 
 require (
+	github.com/barkimedes/go-deepcopy v0.0.0-20220514131651-17c30cfc62df
 	github.com/moby/buildkit v0.21.0
 	github.com/samber/lo v1.50.0
 	github.com/sirupsen/logrus v1.9.3

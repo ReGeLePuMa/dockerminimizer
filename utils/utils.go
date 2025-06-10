@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/barkimedes/go-deepcopy"
 	"github.com/regelepuma/dockerminimizer/logger"
 	"github.com/regelepuma/dockerminimizer/types"
 	"github.com/samber/lo"
@@ -25,6 +26,14 @@ var log = logger.Log
 func RealPath(path string) string {
 	realPath, _ := filepath.Abs(path)
 	return filepath.Clean(realPath)
+}
+
+func CheckIfDirectoryExists(dir string, envPath string) bool {
+	info, err := os.Stat(envPath + "/" + dir)
+	if err != nil {
+		return false
+	}
+	return info.IsDir()
 }
 
 func CheckIfFileExists(file string, envPath string) bool {
@@ -170,17 +179,57 @@ func lowestCommonAncestor(s1, s2 string) string {
 	return filepath.Clean("/" + strings.Join(seg1[:i], "/"))
 }
 
-func ShrinkDictionary(dict map[string][]string) map[string][]string {
+func ShrinkDictionary(dict map[string][]string, envPath string) map[string][]string {
 	const MAX_LIMIT = 127
+	cpyDict, _ := deepcopy.Anything(dict)
+	dict, _ = cpyDict.(map[string][]string)
 	for len(dict) > MAX_LIMIT {
 		keys := iterToSlice(maps.Keys(dict))
+		keys = lo.Filter(keys, func(key string, _ int) bool {
+			return len(key) > 0
+		})
 		slices.SortFunc(keys, func(a, b string) int {
 			return strings.Compare(a, b)
 		})
 		for i := 0; i < len(keys)-1; i += 2 {
 			delete(dict, keys[i])
 			delete(dict, keys[i+1])
-			dict[lowestCommonAncestor(keys[i], keys[i+1])] = []string{keys[i], keys[i+1]}
+			ancestor := lowestCommonAncestor(keys[i], keys[i+1])
+			files, ok := dict[ancestor]
+			newFiles := []string{}
+			if filepath.Clean(keys[i]) != filepath.Clean(ancestor) {
+				name := keys[i]
+				if CheckIfDirectoryExists(name, envPath+"/rootfs") {
+					name = name + "/"
+				}
+				newFiles = append(newFiles, name)
+			}
+			if filepath.Clean(keys[i+1]) != filepath.Clean(ancestor) {
+				name := keys[i+1]
+				if CheckIfDirectoryExists(name, envPath+"/rootfs") {
+					name = name + "/"
+				}
+				newFiles = append(newFiles, name)
+			}
+			if !ok {
+				if len(newFiles) > 0 {
+					dict[ancestor] = newFiles
+				}
+			} else {
+				files = lo.Reduce(newFiles, func(files []string, file string, _ int) []string {
+					return AppendIfMissing(files, file)
+				}, files)
+				copyFiles := []string{}
+				for i := range files {
+					for j := i + 1; j < len(files); j++ {
+						combined := lowestCommonAncestor(files[i], files[j])
+						copyFiles = AppendIfMissing(copyFiles, combined)
+					}
+				}
+				if len(copyFiles) > 1 {
+					dict[ancestor] = copyFiles
+				}
+			}
 		}
 	}
 	return dict
@@ -245,7 +294,7 @@ func ValidateDockerfile(dockerfile string, envPath string, context string, timeo
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	timer := time.AfterFunc(time.Duration(timeout)*time.Second, func() {
 		if cmd.Process != nil {
-			log.Info(fmt.Sprintf("%d seconds have passed. Killing strace.", timeout))
+			log.Info(fmt.Sprintf("%d seconds have passed. Stopping docker.", timeout))
 			exec.Command("docker", "stop", "-t", "5", containerName).Run()
 			exec.Command(HasSudo(), "kill", "-15", fmt.Sprintf("-%d", cmd.Process.Pid)).Run()
 			ok = false
