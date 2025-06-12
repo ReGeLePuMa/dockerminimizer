@@ -178,6 +178,7 @@ func DynamicAnalysis(imageName string, envPath string, metadata types.DockerConf
 	log.Info("Creating container:", containerName)
 	files, symLinks = parseShebang(imageName, containerName, syscalls, files, symLinks, envPath, metadata, timeout)
 	files, symLinks = parseCommand(imageName, containerName, syscalls, files, symLinks, envPath, metadata, timeout)
+	files = utils.ShrinkDictionary(files, envPath)
 	utils.CreateDockerfile("Dockerfile.minimal.strace", "Dockerfile.minimal.template", envPath, files, symLinks)
 	log.Info("Validating Dockerfile...")
 	return utils.ValidateDockerfile("Dockerfile.minimal.strace", envPath, context, timeout)

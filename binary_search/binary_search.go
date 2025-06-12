@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"math/big"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -21,50 +22,6 @@ import (
 )
 
 var log = logger.Log
-
-func addFileToTar(tarWriter *tar.Writer, file string, envPath string) error {
-	filePath := envPath + "/rootfs" + file
-	fd, err := os.Open(filePath)
-	if err != nil {
-		return err
-	}
-	defer fd.Close()
-	info, err := os.Stat(filePath)
-	if err != nil {
-		return err
-	}
-
-	header, err := tar.FileInfoHeader(info, "")
-	if err != nil {
-		return err
-	}
-	header.Name = file
-	if err := tarWriter.WriteHeader(header); err != nil {
-		return err
-	}
-
-	_, err = io.Copy(tarWriter, fd)
-	return err
-}
-
-func buildTarArchive(files map[string][]string, tarFilename string, envPath string, step int) error {
-	tarFile, err := os.Create(tarFilename)
-	if err != nil {
-		log.Error("Failed to create tar file: " + err.Error())
-		return err
-	}
-	defer tarFile.Close()
-	tarWriter := tar.NewWriter(tarFile)
-	for _, fileList := range files {
-		for _, file := range fileList {
-			err := addFileToTar(tarWriter, file, envPath)
-			if err != nil {
-				log.Info("Failed to add %s: %v\n", file, err)
-			}
-		}
-	}
-	return nil
-}
 
 func parseFilesystem(rootfsPath string) (map[string][]string,
 	map[string][]string, error) {
@@ -84,9 +41,6 @@ func parseFilesystem(rootfsPath string) (map[string][]string,
 		if err != nil {
 			log.Error("Error walking directory:", err)
 			return err
-		}
-		if d.IsDir() {
-			return nil
 		}
 		relPath := strings.TrimPrefix(path, rootfsPath)
 		if relPath == "" {
@@ -125,7 +79,88 @@ func splitFilesystem(usedFiles map[string][]string,
 	return usedFiles, unusedFiles
 }
 
-func addTarToDockerfile(tarFilename string, dockerfile string, template string, envPath string) error {
+func addFileToTar(tarWriter *tar.Writer, file string, rootfsPath string) error {
+	var overrideModes = map[string]int64{
+		"/tmp":     01777,
+		"tmp":      01777,
+		"/var/tmp": 01777,
+		"var/tmp":  01777,
+		"/root":    0700,
+		"root":     0700,
+	}
+	filePath := rootfsPath + file
+
+	info, err := os.Lstat(filePath)
+	if err != nil {
+		return err
+	}
+
+	var link string
+	if info.Mode()&os.ModeSymlink != 0 {
+		link, err = os.Readlink(filePath)
+		if err != nil {
+			return err
+		}
+	}
+
+	header, err := tar.FileInfoHeader(info, link)
+	if err != nil {
+		return err
+	}
+
+	header.Name = filepath.ToSlash(file)
+	header.Uid = 0
+	header.Gid = 0
+	header.Uname = "root"
+	header.Gname = "root"
+	if overrideMode, ok := overrideModes[header.Name]; ok {
+		header.Mode = overrideMode
+	} else {
+		header.Mode = int64(info.Mode())
+	}
+	if info.IsDir() && !strings.HasSuffix(header.Name, "/") {
+		header.Name += "/"
+	}
+
+	if err := tarWriter.WriteHeader(header); err != nil {
+		return err
+	}
+
+	if info.Mode()&os.ModeSymlink != 0 || info.IsDir() {
+		return nil
+	}
+
+	fd, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer fd.Close()
+
+	_, err = io.Copy(tarWriter, fd)
+	return err
+}
+
+func buildTarArchive(files map[string][]string, tarFilename string, envPath string) error {
+	tarFile, err := os.Create(tarFilename)
+	if err != nil {
+		log.Error("Failed to create tar file: " + err.Error())
+		return err
+	}
+	defer tarFile.Close()
+	tarWriter := tar.NewWriter(tarFile)
+	defer tarWriter.Close()
+	for _, fileList := range files {
+		for _, file := range fileList {
+			err := addFileToTar(tarWriter, file, envPath+"/rootfs")
+			if err != nil {
+				log.Infof("Failed to add %s: %v\n", file, err)
+			}
+		}
+	}
+	return nil
+}
+
+func addTarToDockerfile(dockerfile string, template string, envPath string) error {
 	file, _ := os.Create(envPath + "/" + dockerfile)
 	defer file.Close()
 	srcFile, _ := os.Open(envPath + "/" + template)
@@ -137,7 +172,7 @@ func addTarToDockerfile(tarFilename string, dockerfile string, template string, 
 	}
 	writer.Flush()
 	writer.WriteString("\n")
-	writer.WriteString(fmt.Sprintf("ADD  %s /\n", tarFilename))
+	writer.WriteString("ADD files.tar /\n")
 	writer.WriteString("\n")
 	writer.Flush()
 	return nil
@@ -151,16 +186,25 @@ func binarySearchStep(envPath string, context string, timeout int, step int, use
 		}
 		usedFiles, unusedFiles = splitFilesystem(usedFiles, unusedFiles)
 		filename := fmt.Sprintf("Dockerfile.minimal.binary_search.%d", step)
-		tarFilename := fmt.Sprintf("%s/rootfs/files-%d.tar", envPath, step)
-		buildTarArchive(usedFiles, tarFilename, envPath, step)
-		err := addTarToDockerfile(tarFilename, filename, "Dockerfile.minimal.template", envPath)
+		tarFilename := fmt.Sprintf("%s/files.tar", envPath)
+		if err := buildTarArchive(usedFiles, tarFilename, envPath); err != nil {
+			log.Error("Error building tar archive:", err)
+			return nil, nil, err
+		}
+		err := addTarToDockerfile(filename, "Dockerfile.minimal.template", envPath)
 		if err != nil {
 			log.Error("Error adding tar to Dockerfile:", err)
 			return nil, nil, errors.New("error adding tar to Dockerfile")
 		}
+		utils.CopyFile(tarFilename, context+"/files.tar")
 		err = utils.ValidateDockerfile(filename, envPath, context, timeout)
+		os.Remove(context + "/files.tar")
+		if err != nil {
+			exec.Command("docker", "rmi", "-f", "dockerminimize-"+filepath.Base(envPath)+":"+fmt.Sprint(step)).Run()
+		}
 		if err == nil {
-			log.Info("Binary search step", step, "succeeded.")
+			log.Info("Binary search step ", step, " succeeded.")
+			utils.CopyFile(envPath+"/files.tar", "files.tar")
 			return make(map[string][]string), usedFiles, nil
 		}
 	}
@@ -173,20 +217,29 @@ func BinarySearch(envPath string, maxLimit int, context string, timeout int) err
 		log.Error("Error parsing filesystem:", err)
 		return errors.New("error parsing filesystem")
 	}
-	step := 1
-	for i := range maxLimit {
+
+	step := 0
+	var lastErr error
+	for step := 1; step <= maxLimit; step++ {
 		log.Info("Binary search iteration:", step)
-		usedFiles, unusedFiles, err = binarySearchStep(envPath, context, timeout, step,
+		usedFiles, unusedFiles, lastErr = binarySearchStep(envPath, context, timeout, step,
 			usedFiles, unusedFiles)
-		if err != nil {
+		if lastErr != nil {
 			break
 		}
-		step = i + 1
 	}
-	if step == maxLimit {
+
+	if lastErr != nil {
+		log.Error("Binary search failed at step", step, "with error:", lastErr)
+		return lastErr
+	}
+
+	if step > maxLimit {
 		log.Info("Reached maximum limit of binary search iterations:", maxLimit)
 		return errors.New("reached maximum limit of binary search iterations")
 	}
-	log.Info("Binary search completed sucessfully.")
+
+	log.Info("Binary search completed successfully.")
+	utils.CopyFile(envPath+"/files.tar", "files.tar")
 	return nil
 }

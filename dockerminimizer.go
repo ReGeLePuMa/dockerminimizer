@@ -68,6 +68,7 @@ func Run(args types.Args) {
 	err = binarysearch.BinarySearch(envPath, args.MaxLimit, context, args.Timeout)
 	if err != nil {
 		os.Remove("Dockerfile.minimal")
+		os.Remove("files.tar")
 	}
 	log.Info("Cleaning up...")
 	utils.Cleanup(envPath, imageName)
