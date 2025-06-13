@@ -107,7 +107,10 @@ func extractMetadata(imageName string, dockerfile string, envPath string) types.
 	}
 	writer.WriteString("\n\n" + "FROM scratch\n\n")
 	for _, env := range config.Env {
-		writer.WriteString("ENV " + env + "\n")
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) == 2 {
+			writer.WriteString("ENV " + fmt.Sprintf("%s=\"%s\"", parts[0], parts[1]) + "\n")
+		}
 	}
 	if config.WorkingDir != "" {
 		writer.WriteString("WORKDIR " + config.WorkingDir + "\n")
