@@ -76,6 +76,11 @@ func prepareEnvironment(envPath string, stracePath string) error {
 	}
 	os.Chmod(envPath+"/strace", 0755)
 	_, err = os.Create(envPath + "/log.txt")
+	if err != nil {
+		log.Error("Failed to create log file: ", envPath+"/log.txt")
+		return errors.New("failed to create log file")
+	}
+	err = os.Chmod(envPath+"/log.txt", 0666)
 
 	return err
 }
