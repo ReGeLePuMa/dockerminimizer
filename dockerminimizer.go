@@ -54,6 +54,10 @@ func Run(args types.Args) {
 	err = strace.DynamicAnalysis(imageName, envPath, metadata, files,
 		symLinks, args.StracePath, context, args.Timeout)
 	if err == nil {
+		_, new_err := os.Stat(envPath + "/files.tar")
+		if new_err == nil {
+			utils.CopyFile(envPath+"/files.tar", "files.tar")
+		}
 		log.Info("Dynamic analysis succeeded")
 		log.Info("Cleaning up...")
 		utils.Cleanup(envPath, imageName)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
@@ -17,6 +18,8 @@ import (
 )
 
 var log = logger.Log
+
+const MAX_LIMIT = 127
 
 func getStraceOutput(imageName string, stracePath string, logPath string, syscalls []string, containerName string, command string, envPath string, metadata types.DockerConfig, timeout int) string {
 	hasSudo := utils.HasSudo()
@@ -183,8 +186,22 @@ func DynamicAnalysis(imageName string, envPath string, metadata types.DockerConf
 	log.Info("Creating container:", containerName)
 	files, symLinks = parseShebang(imageName, containerName, syscalls, files, symLinks, envPath, metadata, timeout)
 	files, symLinks = parseCommand(imageName, containerName, syscalls, files, symLinks, envPath, metadata, timeout)
-	files = utils.ShrinkDictionary(files, envPath)
-	utils.CreateDockerfile("Dockerfile.minimal.strace", "Dockerfile.minimal.template", envPath, files, symLinks)
+	if len(files)+len(symLinks) > MAX_LIMIT {
+		for symlink := range symLinks {
+			files[filepath.Dir(symlink)] = utils.AppendIfMissing(files[filepath.Dir(symlink)], symlink)
+		}
+		tarFilename := fmt.Sprintf("%s/files.tar", envPath)
+		if err := utils.BuildTarArchive(files, tarFilename, envPath); err != nil {
+			log.Error("Error building tar archive:", err)
+			return err
+		}
+		utils.AddTarToDockerfile("Dockerfile.minimal.strace", "Dockerfile.minimal.ldd", envPath)
+		utils.CopyFile(tarFilename, context+"/files.tar")
+	} else {
+		utils.CreateDockerfile("Dockerfile.minimal.strace", "Dockerfile.minimal.template", envPath, files, symLinks)
+	}
 	log.Info("Validating Dockerfile...")
-	return utils.ValidateDockerfile("Dockerfile.minimal.strace", envPath, context, timeout)
+	err = utils.ValidateDockerfile("Dockerfile.minimal.strace", envPath, context, timeout)
+	os.Remove(context + "/files.tar")
+	return err
 }
