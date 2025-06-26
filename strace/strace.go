@@ -77,7 +77,8 @@ func prepareEnvironment(envPath string, stracePath string) error {
 		log.Error("Failed to copy strace to container rootfs")
 		return errors.New("failed to copy strace to container rootfs")
 	}
-	os.Chmod(envPath+"/strace", 0755)
+	utils.ExecCommandWithOptionalSudo(utils.HasSudo(), "chown", "root:root", envPath+"/strace").Run()
+	utils.ExecCommandWithOptionalSudo(utils.HasSudo(), "chmod", "4755", envPath+"/strace").Run()
 	_, err = os.Create(envPath + "/log.txt")
 	if err != nil {
 		log.Error("Failed to create log file: ", envPath+"/log.txt")
