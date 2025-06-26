@@ -44,7 +44,7 @@ func buildAndExtractFilesystem(dockerfile string, envPath string) string {
 		panic("Failed to build Docker image: " + err.Error())
 	}
 	hasSudo := utils.HasSudo()
-	cmd = exec.Command(
+	cmd = utils.ExecCommandWithOptionalSudo(
 		hasSudo,
 		"docker",
 		"build",
@@ -60,8 +60,8 @@ func buildAndExtractFilesystem(dockerfile string, envPath string) string {
 	}
 	os.MkdirAll(envPath+"/rootfs", 0777)
 	log.Info("Extracting filesystem to:", envPath+"/rootfs")
-	exec.Command(hasSudo, "tar", "-xf", envPath+"/rootfs.tar", "-C", envPath+"/rootfs").Run()
-	exec.Command(hasSudo, "rm", "-f", envPath+"/rootfs.tar").Run()
+	utils.ExecCommandWithOptionalSudo(hasSudo, "tar", "-xf", envPath+"/rootfs.tar", "-C", envPath+"/rootfs").Run()
+	utils.ExecCommandWithOptionalSudo(hasSudo, "rm", "-f", envPath+"/rootfs.tar").Run()
 	if os.Getuid() != 0 {
 		exec.Command("sudo", "chown", "-R", os.Getenv("USER")+":"+os.Getenv("USER"), envPath).Run()
 		exec.Command("sudo", "chmod", "-R", "755", envPath).Run()
@@ -147,7 +147,7 @@ func parseFile(file string, envPath string, metadata types.DockerConfig,
 		utils.AddFilesToDockerfile(filePath, files, symLinks, envPath+"/rootfs")
 	} else {
 		hasSudo := utils.HasSudo()
-		output, err := exec.Command(hasSudo, "chroot", envPath+"/rootfs", "which", file).CombinedOutput()
+		output, err := utils.ExecCommandWithOptionalSudo(hasSudo, "chroot", envPath+"/rootfs", "which", file).CombinedOutput()
 		if err != nil {
 			return
 		}

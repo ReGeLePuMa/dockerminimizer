@@ -24,7 +24,7 @@ const MAX_LIMIT = 127
 func getStraceOutput(imageName string, stracePath string, logPath string, syscalls []string, containerName string, command string, envPath string, metadata types.DockerConfig, timeout int) string {
 	hasSudo := utils.HasSudo()
 	command = fmt.Sprintf(
-		"docker run --rm --name %s --entrypoint \"\" -v %s:/usr/bin/strace -v %s:/log.txt %s /usr/bin/strace -s 9999 -o /log.txt -fe %s %s",
+		"docker run --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --rm --name %s --entrypoint \"\" -v %s:/usr/bin/strace -v %s:/log.txt %s /usr/bin/strace -s 9999 -o /log.txt -fe %s %s",
 		containerName,
 		stracePath,
 		logPath,
@@ -39,7 +39,7 @@ func getStraceOutput(imageName string, stracePath string, logPath string, syscal
 		if cmd.Process != nil {
 			log.Info(fmt.Sprintf("%d seconds have passed. Killing strace.", timeout))
 			exec.Command("docker", "stop", "-t", "5", containerName).Run()
-			exec.Command(hasSudo, "kill", "-15", fmt.Sprintf("-%d", cmd.Process.Pid)).Run()
+			utils.ExecCommandWithOptionalSudo(hasSudo, "kill", "-15", fmt.Sprintf("-%d", cmd.Process.Pid)).Run()
 		}
 	})
 	defer timer.Stop()

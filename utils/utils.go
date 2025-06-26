@@ -81,6 +81,13 @@ func HasSudo() string {
 	return "sudo"
 }
 
+func ExecCommandWithOptionalSudo(hasSudo string, args ...string) *exec.Cmd {
+	if hasSudo != "" {
+		return exec.Command(hasSudo, args...)
+	}
+	return exec.Command(args[0], args[1:]...)
+}
+
 func CopyFile(src string, dest string) error {
 	sourceFile, err := os.Open(src)
 	if err != nil {
@@ -138,7 +145,7 @@ func GetContainerCommand(imageName string, envPath string, metadata types.Docker
 	command = filepath.Base(command)
 	hasSudo := HasSudo()
 
-	output, err := exec.Command(hasSudo, "chroot", envPath+"/rootfs", "which", command).CombinedOutput()
+	output, err := ExecCommandWithOptionalSudo(hasSudo, "chroot", envPath+"/rootfs", "which", command).CombinedOutput()
 	cmd := strings.TrimSpace(string(output))
 	if err != nil {
 		cmd = metadata.WorkingDir + "/" + command
@@ -396,7 +403,7 @@ func ValidateDockerfile(dockerfile string, envPath string, context string, timeo
 		if cmd.Process != nil {
 			log.Info(fmt.Sprintf("%d seconds have passed. Stopping docker.", timeout))
 			exec.Command("docker", "stop", "-t", "5", containerName).Run()
-			exec.Command(HasSudo(), "kill", "-15", fmt.Sprintf("-%d", cmd.Process.Pid)).Run()
+			ExecCommandWithOptionalSudo(HasSudo(), "kill", "-15", fmt.Sprintf("-%d", cmd.Process.Pid)).Run()
 			ok = false
 		}
 	})
