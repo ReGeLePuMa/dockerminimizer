@@ -39,7 +39,7 @@ install_strace() {
             ;;
     esac
     sudo apt update && \ 
-    sudo apt install -y make gcc autoconf gcc-multilib g++-multilib libc6-dev-i386 && \
+    sudo apt install -y make gcc gawk autoconf gcc-multilib g++-multilib libc6-dev-i386 && \
     git clone https://github.com/strace/strace.git tmp && \
     cd tmp && \
     ./bootstrap && \

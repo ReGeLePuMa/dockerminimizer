@@ -1,0 +1,5 @@
+Dockerfile*
+install.sh
+*.tar
+README*
+dockerminimizer
