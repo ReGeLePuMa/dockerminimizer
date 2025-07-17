@@ -36,7 +36,7 @@ func Run(args types.Args) {
 
 	imageName, envPath, metadata, err := preprocess.ProcessArgs(args)
 	if err == nil {
-		log.Error("Dockerfile is already minimal")
+		log.Info("Dockerfile is already minimal")
 		log.Info("Cleaning up...")
 		utils.Cleanup(envPath, imageName)
 		return
@@ -50,7 +50,7 @@ func Run(args types.Args) {
 		utils.Cleanup(envPath, imageName)
 		return
 	}
-	log.Error("Static analysis failed, continuing with dynamic analysis")
+	log.Warn("Static analysis failed, continuing with dynamic analysis...")
 	err = strace.DynamicAnalysis(imageName, envPath, metadata, files,
 		symLinks, args.StracePath, context, args.Timeout)
 	if err == nil {
@@ -69,6 +69,7 @@ func Run(args types.Args) {
 		utils.Cleanup(envPath, imageName)
 		return
 	}
+	log.Warn("Dynamic analysis failed, starting binary search...")
 	err = binarysearch.BinarySearch(envPath, args.MaxLimit, context, args.Timeout)
 	if err != nil {
 		os.Remove("Dockerfile.minimal")

@@ -39,17 +39,18 @@ func ParseOutput(output []byte, rootfsPath string) (map[string][]string, map[str
 	return files, symLinks
 }
 func StaticAnalysis(imageName string, envPath string, metadata types.DockerConfig, context string, timeout int) (map[string][]string, map[string]string, error) {
+	log.Info("Starting static analysis...")
 	command := utils.GetContainerCommand(imageName, envPath, metadata)
 	hasSudo := utils.HasSudo()
 	lddCommand := hasSudo + " chroot " + envPath + "/rootfs ldd " + command
-	log.Info("Running command:", lddCommand)
+	log.Debug("Running command:", lddCommand)
 	lddOutput, err := exec.Command("sh", "-c", lddCommand).CombinedOutput()
 	if err != nil {
-		log.Error("Failed to run ldd command\n" + err.Error())
+		log.Error("Failed to run ldd command\n")
 		return nil, nil, errors.New("failed to run ldd command")
 	}
 	libs, symlinkLibs := ParseOutput(lddOutput, envPath+"/rootfs")
 	utils.CreateDockerfile("Dockerfile.minimal.ldd", "Dockerfile.minimal.initial", envPath, libs, symlinkLibs)
-	log.Info("Validating Dockerfile...")
+	log.Debug("Validating Dockerfile...")
 	return libs, symlinkLibs, utils.ValidateDockerfile("Dockerfile.minimal.ldd", envPath, context, timeout)
 }

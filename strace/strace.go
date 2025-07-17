@@ -33,11 +33,11 @@ func getStraceOutput(imageName string, stracePath string, logPath string, syscal
 		command,
 	)
 	cmd := exec.Command("sh", "-c", command)
-	log.Info("Running command:", command)
+	log.Debug("Running command:", command)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	timer := time.AfterFunc(time.Duration(timeout)*time.Second, func() {
 		if cmd.Process != nil {
-			log.Info(fmt.Sprintf("%d seconds have passed. Killing strace.", timeout))
+			log.Debug(fmt.Sprintf("%d seconds have passed. Killing strace.", timeout))
 			exec.Command("docker", "stop", "-t", "5", containerName).Run()
 			utils.ExecCommandWithOptionalSudo(hasSudo, "kill", "-15", fmt.Sprintf("-%d", cmd.Process.Pid)).Run()
 		}
@@ -46,7 +46,7 @@ func getStraceOutput(imageName string, stracePath string, logPath string, syscal
 	err := cmd.Start()
 
 	if err != nil {
-		log.Error("Failed to run strace command\n" + err.Error())
+		log.Error("Failed to run strace command\n")
 		return ""
 	}
 	cmd.Wait()
@@ -120,7 +120,7 @@ func parseShebang(imageName string, containerName string, syscalls []string,
 	shebang := getSheBang(command, envPath+"/rootfs")
 	regex := regexp.MustCompile(`^#!\s*([^\s]+)`)
 	if !regex.MatchString(shebang) {
-		log.Error("Failed to find shebang in file:", command)
+		log.Debug("Failed to find shebang in file:", command)
 		return files, symLinks
 	}
 	match := regex.FindStringSubmatch(shebang)
@@ -130,10 +130,10 @@ func parseShebang(imageName string, containerName string, syscalls []string,
 	}
 	interpreter := match[1]
 	lddCommand := hasSudo + " chroot " + envPath + "/rootfs ldd " + interpreter
-	log.Info("Running command:", lddCommand)
+	log.Debug("Running command:", lddCommand)
 	lddOutput, err := exec.Command("sh", "-c", lddCommand).CombinedOutput()
 	if err != nil {
-		log.Error("Failed to run ldd command\n" + err.Error())
+		log.Error("Failed to run ldd command\n")
 	}
 	files, symLinks = ldd.ParseOutput(lddOutput, envPath+"/rootfs")
 
@@ -153,6 +153,7 @@ func parseCommand(imageName string, containerName string, syscalls []string,
 
 func DynamicAnalysis(imageName string, envPath string, metadata types.DockerConfig,
 	files map[string][]string, symLinks map[string]string, stracePath string, context string, timeout int) error {
+	log.Info("Starting dynamic analysis...")
 	if !utils.CheckIfFileExists(stracePath, "") {
 		log.Error("Strace not found at path:", stracePath)
 		log.Error("Skipping dynamic analysis...")
@@ -184,7 +185,7 @@ func DynamicAnalysis(imageName string, envPath string, metadata types.DockerConf
 		symLinks = make(map[string]string)
 	}
 	containerName := imageName + "-strace"
-	log.Info("Creating container:", containerName)
+	log.Debug("Creating container:", containerName)
 	files, symLinks = parseShebang(imageName, containerName, syscalls, files, symLinks, envPath, metadata, timeout)
 	files, symLinks = parseCommand(imageName, containerName, syscalls, files, symLinks, envPath, metadata, timeout)
 	if len(files)+len(symLinks) > MAX_LIMIT {
@@ -201,7 +202,7 @@ func DynamicAnalysis(imageName string, envPath string, metadata types.DockerConf
 	} else {
 		utils.CreateDockerfile("Dockerfile.minimal.strace", "Dockerfile.minimal.template", envPath, files, symLinks)
 	}
-	log.Info("Validating Dockerfile...")
+	log.Debug("Validating Dockerfile...")
 	err = utils.ValidateDockerfile("Dockerfile.minimal.strace", envPath, context, timeout)
 	os.Remove(context + "/files.tar")
 	return err

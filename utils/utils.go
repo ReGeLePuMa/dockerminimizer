@@ -156,7 +156,7 @@ func GetContainerCommand(imageName string, envPath string, metadata types.Docker
 			os.Exit(1)
 		}
 	}
-	log.Info("Command found: " + cmd)
+	log.Debug("Command found: " + cmd)
 	return cmd
 }
 
@@ -317,7 +317,7 @@ func BuildTarArchive(files map[string][]string, tarFilename string, envPath stri
 		for _, file := range fileList {
 			err := addFileToTar(tarWriter, file, envPath+"/rootfs")
 			if err != nil {
-				log.Infof("Failed to add %s: %v\n", file, err)
+				log.Debugf("Failed to add %s: %v\n", file, err)
 			}
 		}
 	}
@@ -372,11 +372,11 @@ func CreateDockerfile(dockerfile string, template string, envPath string, files 
 		}
 		quoted = append(quoted, filepath.Clean(fmt.Sprintf("\"%s/\"", dir)))
 		quoted = slices.Compact(quoted)
-		log.Println("Copying files from " + dir)
+		log.Debugln("Copying files from " + dir)
 		writer.WriteString("COPY --from=builder [" + strings.Join(quoted, ", ") + "]\n")
 	}
 	for link, target := range symLinks {
-		log.Println("Copying symbolic link " + link + " to " + target)
+		log.Debugln("Copying symbolic link " + link + " to " + target)
 		writer.WriteString("COPY --from=builder [\"" + target + "\",  \"" + link + "\"]\n")
 	}
 	writer.WriteString("\n")
@@ -389,9 +389,9 @@ func ValidateDockerfile(dockerfile string, envPath string, context string, timeo
 	imageName := "dockerminimize-" + filepath.Base(envPath) + ":" + tagName
 	buildPath := envPath + "/" + dockerfile
 	output, err := exec.Command("docker", "build", "-f", buildPath, "-t", imageName, context).CombinedOutput()
-	log.Info(string(output))
+	log.Debug(string(output))
 	if err != nil {
-		log.Error("Failed to build Docker image\n")
+		log.Debug("Failed to build Docker image\n")
 		return errors.New("failed to build Docker image")
 	}
 
@@ -401,7 +401,7 @@ func ValidateDockerfile(dockerfile string, envPath string, context string, timeo
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	timer := time.AfterFunc(time.Duration(timeout)*time.Second, func() {
 		if cmd.Process != nil {
-			log.Info(fmt.Sprintf("%d seconds have passed. Stopping docker.", timeout))
+			log.Debug(fmt.Sprintf("%d seconds have passed. Stopping docker.", timeout))
 			exec.Command("docker", "stop", "-t", "5", containerName).Run()
 			ExecCommandWithOptionalSudo(HasSudo(), "kill", "-15", fmt.Sprintf("-%d", cmd.Process.Pid)).Run()
 			ok = false
@@ -410,9 +410,9 @@ func ValidateDockerfile(dockerfile string, envPath string, context string, timeo
 	defer timer.Stop()
 	output, err = cmd.CombinedOutput()
 
-	log.Info(string(output))
+	log.Debug(string(output))
 	if ok && err != nil {
-		log.Error("Failed to run Docker image\n")
+		log.Debug("Failed to run Docker image\n")
 		return errors.New("failed to run Docker image")
 	}
 	CopyFile(envPath+"/"+dockerfile, "Dockerfile.minimal")
@@ -421,8 +421,8 @@ func ValidateDockerfile(dockerfile string, envPath string, context string, timeo
 
 func Cleanup(envPath string, imageName string) {
 	command := fmt.Sprintf("docker rmi -f $(docker images %s --format \"{{.Repository}}:{{.Tag}}\")", imageName)
-	log.Info("Cleaning up Docker images...")
-	log.Info("Running command: " + command)
+	log.Debug("Cleaning up Docker images...")
+	log.Debug("Running command: " + command)
 	exec.Command("sh", "-c", command).CombinedOutput()
 	os.Clearenv()
 	err := os.RemoveAll(envPath)

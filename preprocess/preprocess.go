@@ -29,16 +29,16 @@ func createEnvironment() string {
 	if err != nil {
 		panic("Failed to create directory: " + err.Error())
 	}
-	log.Info("Created directory:", homeDir+"/.dockerminimizer/"+dirStr)
+	log.Debug("Created directory:", homeDir+"/.dockerminimizer/"+dirStr)
 	return (homeDir + "/.dockerminimizer/" + dirStr)
 }
 
 func buildAndExtractFilesystem(dockerfile string, envPath string) string {
 	buildContext := filepath.Dir(dockerfile)
 	cmd := exec.Command("docker", "build", "-f", dockerfile, "-t", "dockerminimize-"+filepath.Base(envPath), buildContext)
-	log.Info(cmd.String())
+	log.Debug(cmd.String())
 	output, err := cmd.CombinedOutput()
-	log.Info(string(output))
+	log.Debug(string(output))
 	if err != nil {
 		os.RemoveAll(envPath)
 		panic("Failed to build Docker image: " + err.Error())
@@ -51,15 +51,15 @@ func buildAndExtractFilesystem(dockerfile string, envPath string) string {
 		"-f", dockerfile,
 		"-o", "type=tar,dest="+envPath+"/rootfs.tar",
 		buildContext)
-	log.Info(cmd.String())
+	log.Debug(cmd.String())
 	output, err = cmd.CombinedOutput()
-	log.Info(string(output))
+	log.Debug(string(output))
 	if err != nil {
 		os.RemoveAll(envPath)
 		panic("Failed to extract filesystem from Docker image: " + err.Error())
 	}
 	os.MkdirAll(envPath+"/rootfs", 0777)
-	log.Info("Extracting filesystem to:", envPath+"/rootfs")
+	log.Debug("Extracting filesystem to:", envPath+"/rootfs")
 	utils.ExecCommandWithOptionalSudo(hasSudo, "tar", "-xf", envPath+"/rootfs.tar", "-C", envPath+"/rootfs").Run()
 	utils.ExecCommandWithOptionalSudo(hasSudo, "rm", "-f", envPath+"/rootfs.tar").Run()
 	if os.Getuid() != 0 {
@@ -85,7 +85,7 @@ func extractMetadata(imageName string, dockerfile string, envPath string) types.
 		}
 	}
 	cmd := exec.Command("docker", "inspect", "--format", "{{json .Config}}", imageName)
-	log.Info(cmd.String())
+	log.Debug(cmd.String())
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
@@ -197,6 +197,7 @@ func processImage(imageName string, envPath string, timeout int) (string, string
 }
 
 func ProcessArgs(args types.Args) (string, string, types.DockerConfig, error) {
+	log.Info("Creating environment...")
 	envPath := createEnvironment()
 	if args.Image == "" {
 		_, err := os.Stat(args.Dockerfile)

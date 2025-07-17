@@ -101,7 +101,7 @@ func binarySearchStep(envPath string, context string, timeout int, step int, use
 			exec.Command("docker", "rmi", "-f", "dockerminimize-"+filepath.Base(envPath)+":"+fmt.Sprint(step)).Run()
 		}
 		if err == nil {
-			log.Info("Binary search step ", step, " succeeded.")
+			log.Infof("Binary search step %d succeeded", step)
 			utils.CopyFile(envPath+"/files.tar", "files.tar")
 			return make(map[string][]string), usedFiles, nil
 		}
@@ -119,7 +119,7 @@ func BinarySearch(envPath string, maxLimit int, context string, timeout int) err
 	step := 0
 	var lastErr error
 	for step := 1; step <= maxLimit; step++ {
-		log.Info("Binary search iteration:", step)
+		log.Infof("Starting binary search iteration %d...", step)
 		usedFiles, unusedFiles, lastErr = binarySearchStep(envPath, context, timeout, step,
 			usedFiles, unusedFiles)
 		if lastErr != nil {
@@ -128,12 +128,12 @@ func BinarySearch(envPath string, maxLimit int, context string, timeout int) err
 	}
 
 	if lastErr != nil {
-		log.Error("Binary search failed at step", step, "with error:", lastErr)
+		log.Error("Binary search failed at step ", step)
 		return lastErr
 	}
 
 	if step > maxLimit {
-		log.Info("Reached maximum limit of binary search iterations:", maxLimit)
+		log.Error("Reached maximum limit of binary search iterations: ", maxLimit)
 		return errors.New("reached maximum limit of binary search iterations")
 	}
 
