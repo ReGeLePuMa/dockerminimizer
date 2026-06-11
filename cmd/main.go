@@ -24,6 +24,9 @@ func parseArgs(runFunc func(args types.Args)) *cobra.Command {
 	cmd.Flags().IntVar(&args.Timeout, "timeout", 30, "How long the container should run before being declared healthy")
 	cmd.Flags().StringVar(&args.StracePath, "strace_path", "/usr/local/bin/strace", "Path to the statically linked strace binary")
 	cmd.Flags().BoolVar(&args.BinarySearch, "binary_search", true, "Continue with binary search if dynamic analysis fails")
+	cmd.Flags().StringVar(&args.AIProvider, "provider", "", "AI provider to use for analysis (e.g., 'google')")
+	cmd.Flags().StringVar(&args.AIModel, "model", "", "AI model to use for analysis (e.g., 'gemini-3.5-flash')")
+	cmd.Flags().StringVar(&args.AIToken, "token", "", "API token for the AI service")
 	return cmd
 }
 

@@ -52,7 +52,7 @@ func Run(args types.Args) {
 	}
 	log.Warn("Static analysis failed, continuing with dynamic analysis...")
 	err = strace.DynamicAnalysis(imageName, envPath, metadata, files,
-		symLinks, args.StracePath, context, args.Timeout)
+		symLinks, args.StracePath, context, args.Timeout, args.AIProvider, args.AIModel, args.AIToken)
 	if err == nil {
 		_, new_err := os.Stat(envPath + "/files.tar")
 		if new_err == nil {

@@ -8,6 +8,9 @@ type Args struct {
 	Debug        bool
 	StracePath   string
 	BinarySearch bool
+	AIProvider   string
+	AIModel      string
+	AIToken      string
 }
 
 type DockerConfig struct {
