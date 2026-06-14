@@ -23,6 +23,15 @@ import (
 )
 
 var log = logger.Log
+var environmentPath string
+
+func SetEnvironmentPath(path string) {
+	environmentPath = path
+}
+
+func GetEnvironmentPath() string {
+	return environmentPath
+}
 
 func RealPath(path string) string {
 	realPath, _ := filepath.Abs(path)

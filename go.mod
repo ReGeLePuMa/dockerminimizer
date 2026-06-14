@@ -8,6 +8,7 @@ require (
 	github.com/samber/lo v1.50.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
+	google.golang.org/genai v1.60.0
 )
 
 require (
@@ -30,7 +31,6 @@ require (
 	golang.org/x/net v0.39.0 // indirect
 	golang.org/x/sys v0.32.0 // indirect
 	golang.org/x/text v0.25.0 // indirect
-	google.golang.org/genai v1.60.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241021214115-324edc3d5d38 // indirect
 	google.golang.org/grpc v1.69.4 // indirect
 	google.golang.org/protobuf v1.35.2 // indirect

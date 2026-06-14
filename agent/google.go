@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/regelepuma/dockerminimizer/agent/tools"
+	"github.com/regelepuma/dockerminimizer/utils"
 	"google.golang.org/genai"
 )
 
@@ -29,7 +30,8 @@ func NewGoogleAIAgent(ctx context.Context, model string, token string) Agent {
 
 func (a *GoogleAIAgent) RegisterTools(tools []tools.Tool) {
 	a.tools = tools
-	a.systemPrompt = getSystemPrompt(tools)
+	templateDockerfilePath := utils.GetEnvironmentPath() + "/Dockerfile.minimal.template"
+	a.systemPrompt = getSystemPrompt(templateDockerfilePath, tools)
 }
 
 func (a *GoogleAIAgent) buildSDKTools() []*genai.Tool {
@@ -78,6 +80,12 @@ func (a *GoogleAIAgent) GenerateAction(ctx context.Context, prompt string) (stri
 	config := &genai.GenerateContentConfig{}
 	const maxAgentReasoningSteps = 20
 
+	if a.systemPrompt != "" {
+		config.SystemInstruction = &genai.Content{
+			Parts: []*genai.Part{{Text: a.systemPrompt}},
+		}
+	}
+
 	if len(a.tools) > 0 {
 		config.Tools = a.buildSDKTools()
 	}
@@ -97,10 +105,6 @@ func (a *GoogleAIAgent) GenerateAction(ctx context.Context, prompt string) (stri
 
 		candidate := resp.Candidates[0]
 		history = append(history, candidate.Content)
-
-		if candidate.FinishReason == genai.FinishReasonStop {
-			return resp.Text(), nil
-		}
 
 		var toolResults []*genai.Part
 		for _, part := range candidate.Content.Parts {
@@ -123,7 +127,10 @@ func (a *GoogleAIAgent) GenerateAction(ctx context.Context, prompt string) (stri
 		}
 
 		if len(toolResults) == 0 {
-			break
+			if candidate.FinishReason == genai.FinishReasonStop {
+				return resp.Text(), nil
+			}
+			return "", fmt.Errorf("agent stalled on step %d: no tool calls and finish reason is %v", i, candidate.FinishReason)
 		}
 
 		history = append(history, &genai.Content{
@@ -132,7 +139,7 @@ func (a *GoogleAIAgent) GenerateAction(ctx context.Context, prompt string) (stri
 		})
 	}
 
-	return "", nil
+	return "", fmt.Errorf("agent exhausted %d reasoning steps without reaching a conclusion", maxAgentReasoningSteps)
 }
 
 func (a *GoogleAIAgent) executeTool(name string, input map[string]interface{}) (string, error) {

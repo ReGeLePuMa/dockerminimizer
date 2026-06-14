@@ -30,6 +30,7 @@ func createEnvironment() string {
 		panic("Failed to create directory: " + err.Error())
 	}
 	log.Debug("Created directory:", homeDir+"/.dockerminimizer/"+dirStr)
+	utils.SetEnvironmentPath(homeDir + "/.dockerminimizer/" + dirStr)
 	return (homeDir + "/.dockerminimizer/" + dirStr)
 }
 

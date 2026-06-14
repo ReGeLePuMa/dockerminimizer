@@ -55,8 +55,11 @@ Flags:
   -h, --help                 help for dockerminimizer
   -i, --image string         Name of the Docker image
       --max_limit int        Number of binary search steps (default 10)
+      --model string         AI model to use for analysis (e.g., 'gemini-3.5-flash')
+      --provider string      AI provider to use for analysis (e.g., 'google')
       --strace_path string   Path to the statically linked strace binary (default "/usr/local/bin/strace")
       --timeout int          How long the container should run before being declared healthy (default 30)
+      --token string         API token for the AI service
 ```
 
 ## Example

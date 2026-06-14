@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -44,9 +45,11 @@ func getStraceOutput(imageName string, stracePath string, logPath string, syscal
 			log.Error("Failed to allocate stdin pipe:", err)
 			return ""
 		}
+		defer stdinPipe.Close()
 		ai_agent.RegisterTools(tools.GetAvailableTools(stdinPipe))
 	}
 	log.Debug("Running command:", command)
+
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	timer := time.AfterFunc(time.Duration(timeout)*time.Second, func() {
 		if cmd.Process != nil {
@@ -62,7 +65,38 @@ func getStraceOutput(imageName string, stracePath string, logPath string, syscal
 		log.Error("Failed to run strace command\n")
 		return ""
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var wg sync.WaitGroup
+
+	if ai_agent != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			prompt := `
+				The dynamic analysis has begun.
+				Begin interacting with the application after it finishes booting up.
+				!!! PLEASE TRY NOT TO CRASH THE APPLICATION !!!
+			`
+
+			log.Debug("Starting AI Agent loop in background...")
+			_, err := ai_agent.GenerateAction(ctx, prompt)
+
+			if err != nil && err != context.Canceled {
+				log.Error("AI Agent finished with error:", err)
+			} else {
+				log.Debug("AI Agent finished execution.")
+			}
+		}()
+	}
+
 	cmd.Wait()
+	cancel()
+	wg.Wait()
+
 	data, _ := os.ReadFile(logPath)
 	return string(data)
 }

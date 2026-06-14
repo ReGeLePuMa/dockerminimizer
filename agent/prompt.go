@@ -2,17 +2,31 @@ package agent
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/regelepuma/dockerminimizer/agent/tools"
 )
 
-func getSystemPrompt(tools []tools.Tool) string {
+func getSystemPrompt(dockerfilePath string, tools []tools.Tool) string {
 	var prompt string = `
 You are a dynamic analysis agent. Your sole objective is to maximize the number of unique file paths and executables that the target application accesses during its runtime, specifically triggering as many 'open', 'openat', 'execve', and 'execveat' syscalls as possible. Every file path or binary you cause the application to touch will be captured by strace and used to build a minimal Docker image.
-To achieve this, you have access to the following tools:
-## Available Tools
+
+The container you are analyzing is based on the following Dockerfile:
+----------
+Dockerfile
+
 %s
+
+---------
+To achieve this, you have access to the following tools:
+
+----------
+Available Tools
+
+%s
+
+---------
 
 ## Strategy
 
@@ -82,5 +96,13 @@ Many applications re-read config files on reload signals:
 	for _, tool := range tools {
 		fmt.Fprintf(&toolDescriptions, "### %s - %s\n\n", tool.Name, tool.Description)
 	}
-	return fmt.Sprintf(prompt, toolDescriptions.String())
+	return fmt.Sprintf(prompt, getDockerfileContent(dockerfilePath), toolDescriptions.String())
+}
+
+func getDockerfileContent(dockerfilePath string) string {
+	content, err := os.ReadFile(dockerfilePath)
+	if err != nil {
+		return fmt.Sprintf("Error reading Dockerfile: %v", err)
+	}
+	return string(content)
 }
