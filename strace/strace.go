@@ -1,6 +1,7 @@
 package strace
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -8,9 +9,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/regelepuma/dockerminimizer/agent"
+	"github.com/regelepuma/dockerminimizer/agent/tools"
 	"github.com/regelepuma/dockerminimizer/ldd"
 	"github.com/regelepuma/dockerminimizer/logger"
 	"github.com/regelepuma/dockerminimizer/types"
@@ -18,6 +22,8 @@ import (
 )
 
 var log = logger.Log
+var ai_agent agent.Agent
+var ctx = context.Background()
 
 const MAX_LIMIT = 127
 
@@ -33,7 +39,17 @@ func getStraceOutput(imageName string, stracePath string, logPath string, syscal
 		command,
 	)
 	cmd := exec.Command("sh", "-c", command)
+	if ai_agent != nil {
+		stdinPipe, err := cmd.StdinPipe()
+		if err != nil {
+			log.Error("Failed to allocate stdin pipe:", err)
+			return ""
+		}
+		defer stdinPipe.Close()
+		ai_agent.RegisterTools(tools.GetAvailableTools(stdinPipe))
+	}
 	log.Debug("Running command:", command)
+
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	timer := time.AfterFunc(time.Duration(timeout)*time.Second, func() {
 		if cmd.Process != nil {
@@ -49,7 +65,38 @@ func getStraceOutput(imageName string, stracePath string, logPath string, syscal
 		log.Error("Failed to run strace command\n")
 		return ""
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var wg sync.WaitGroup
+
+	if ai_agent != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			prompt := `
+				The dynamic analysis has begun.
+				Begin interacting with the application after it finishes booting up.
+				!!! PLEASE TRY NOT TO CRASH THE APPLICATION !!!
+			`
+
+			log.Debug("Starting AI Agent loop in background...")
+			_, err := ai_agent.GenerateAction(ctx, prompt)
+
+			if err != nil && err != context.Canceled {
+				log.Error("AI Agent finished with error:", err)
+			} else {
+				log.Debug("AI Agent finished execution.")
+			}
+		}()
+	}
+
 	cmd.Wait()
+	cancel()
+	wg.Wait()
+
 	data, _ := os.ReadFile(logPath)
 	return string(data)
 }
@@ -152,7 +199,14 @@ func parseCommand(imageName string, containerName string, syscalls []string,
 }
 
 func DynamicAnalysis(imageName string, envPath string, metadata types.DockerConfig,
-	files map[string][]string, symLinks map[string]string, stracePath string, context string, timeout int) error {
+	files map[string][]string, symLinks map[string]string, stracePath string, context string, timeout int, aiType string, aiModel string, aiToken string) error {
+	if aiType == "" && aiModel == "" && aiToken == "" {
+		log.Info("No AI configuration provided, using standard dynamic analysis approach...")
+	} else {
+
+		log.Info("Starting AI-assisted dynamic analysis with AI Type:", aiType, "Model:", aiModel)
+	}
+
 	log.Info("Starting dynamic analysis...")
 	if !utils.CheckIfFileExists(stracePath, "") {
 		log.Error("Strace not found at path:", stracePath)
