@@ -46,7 +46,12 @@ func getStraceOutput(imageName string, stracePath string, logPath string, syscal
 			return ""
 		}
 		defer stdinPipe.Close()
-		ai_agent.RegisterTools(tools.GetAvailableTools(stdinPipe))
+		ai_agent.RegisterTools(
+			agent.BoundTools(
+				tools.GetAvailableTools(stdinPipe),
+				containerName,
+			),
+		)
 	}
 	log.Debug("Running command:", command)
 
@@ -203,7 +208,7 @@ func DynamicAnalysis(imageName string, envPath string, metadata types.DockerConf
 	if aiType == "" && aiModel == "" && aiToken == "" {
 		log.Info("No AI configuration provided, using standard dynamic analysis approach...")
 	} else {
-
+		ai_agent = agent.AgentFactory(ctx, aiType, aiModel, aiToken)
 		log.Info("Starting AI-assisted dynamic analysis with AI Type:", aiType, "Model:", aiModel)
 	}
 
